@@ -1,0 +1,19 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Machine-specific
+python_path.txt
+data/apps.json
+
+# Logs
+debug.log
+*.log
+
+# Claude internal
+.claude/
+
+# IDE
+.vscode/
+.idea/
