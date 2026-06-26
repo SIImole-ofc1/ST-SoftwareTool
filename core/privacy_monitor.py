@@ -1,4 +1,4 @@
-"""Camera and microphone usage monitor — polls Windows registry every 5 s."""
+"""Camera and microphone usage monitor — polls Windows ConsentStore every 5 s."""
 from __future__ import annotations
 
 import os
@@ -11,39 +11,77 @@ _CONSENT = (
     r'SOFTWARE\Microsoft\Windows\CurrentVersion'
     r'\CapabilityAccessManager\ConsentStore'
 )
-_WEBCAM_NONPKG = _CONSENT + r'\webcam\NonPackaged'
-_MIC_NONPKG    = _CONSENT + r'\microphone\NonPackaged'
+_WEBCAM_KEY = _CONSENT + r'\webcam'
+_MIC_KEY    = _CONSENT + r'\microphone'
 
 
-def _active_apps(non_pkg_key: str) -> List[str]:
-    """Return display names of apps currently holding the device open."""
+def _is_active(key: winreg.HKEYType) -> bool:
+    """Return True if LastUsedTimeStart is set and LastUsedTimeStop is missing or 0."""
+    try:
+        start, _ = winreg.QueryValueEx(key, 'LastUsedTimeStart')
+    except OSError:
+        return False
+    if not start:
+        return False
+    try:
+        stop, _ = winreg.QueryValueEx(key, 'LastUsedTimeStop')
+        return stop == 0
+    except OSError:
+        # Stop value absent → device still in use
+        return True
+
+
+def _active_apps(consent_key: str) -> List[str]:
+    """Return display names of apps currently holding the device open.
+
+    Scans both packaged apps (timestamps directly under their subkey) and
+    non-packaged Win32 apps (timestamps one level deeper under NonPackaged).
+    """
     names: List[str] = []
     try:
-        root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, non_pkg_key)
-        idx = 0
-        while True:
-            try:
-                sub_name = winreg.EnumKey(root, idx)
-                sub = winreg.OpenKey(root, sub_name)
+        root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, consent_key)
+    except OSError:
+        return names
+
+    idx = 0
+    while True:
+        try:
+            sub_name = winreg.EnumKey(root, idx)
+        except OSError:
+            break
+        idx += 1
+
+        try:
+            sub = winreg.OpenKey(root, sub_name)
+        except OSError:
+            continue
+
+        if sub_name == 'NonPackaged':
+            # Each child of NonPackaged is a Win32 exe path (# instead of \)
+            np_idx = 0
+            while True:
                 try:
-                    start, _ = winreg.QueryValueEx(sub, 'LastUsedTimeStart')
-                    try:
-                        stop, _ = winreg.QueryValueEx(sub, 'LastUsedTimeStop')
-                    except OSError:
-                        stop = 0
-                    if start and stop == 0:
-                        # '#' replaces '\' in the key name
-                        exe = sub_name.replace('#', '\\')
-                        names.append(os.path.basename(exe) or sub_name[:40])
+                    app_key_name = winreg.EnumKey(sub, np_idx)
+                except OSError:
+                    break
+                np_idx += 1
+                try:
+                    app_key = winreg.OpenKey(sub, app_key_name)
+                    if _is_active(app_key):
+                        exe = app_key_name.replace('#', os.sep)
+                        names.append(os.path.basename(exe) or app_key_name[:40])
+                    winreg.CloseKey(app_key)
                 except OSError:
                     pass
-                winreg.CloseKey(sub)
-                idx += 1
-            except OSError:
-                break
-        winreg.CloseKey(root)
-    except OSError:
-        pass
+        else:
+            # Packaged (MSIX/UWP) app — timestamps live directly here
+            if _is_active(sub):
+                # e.g. "MSTeams_8wekyb3d8bbwe" → "MSTeams"
+                names.append(sub_name.split('_')[0])
+
+        winreg.CloseKey(sub)
+
+    winreg.CloseKey(root)
     return names
 
 
@@ -72,7 +110,7 @@ class PrivacyMonitor(QThread):
 
     def _poll(self) -> None:
         # Camera
-        cam_apps = _active_apps(_WEBCAM_NONPKG)
+        cam_apps = _active_apps(_WEBCAM_KEY)
         cam_on   = bool(cam_apps)
         if cam_on and not self._cam_active:
             self.camera_started.emit(', '.join(cam_apps))
@@ -81,7 +119,7 @@ class PrivacyMonitor(QThread):
         self._cam_active = cam_on
 
         # Microphone
-        mic_apps = _active_apps(_MIC_NONPKG)
+        mic_apps = _active_apps(_MIC_KEY)
         mic_on   = bool(mic_apps)
         if mic_on and not self._mic_active:
             self.mic_started.emit(', '.join(mic_apps))
