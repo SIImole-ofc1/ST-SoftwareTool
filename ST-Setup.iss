@@ -25,7 +25,7 @@ AppUpdatesURL={#AppURL}
 DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
 ; Installer output goes to dist\installer\  (created automatically)
-OutputDir=dist\installer
+OutputDir=dist_nuitka\installer
 OutputBaseFilename=ST-SoftwareTool-Setup
 SetupIconFile=assets\STsoftwareterminalLOGO.ico
 ; Logo shown on the left panel (Welcome/Finish pages) and top-right thumbnail
@@ -57,8 +57,8 @@ Name: "startuprun"; \
     Flags: unchecked
 
 [Files]
-; Bundle the entire dist\ST\ folder produced by PyInstaller
-Source: "dist\ST\*"; \
+; Bundle the folder produced by Nuitka
+Source: "dist_nuitka\main.dist\*"; \
     DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
