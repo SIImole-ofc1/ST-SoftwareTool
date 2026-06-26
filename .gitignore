@@ -21,3 +21,7 @@ core/tor_data/
 # IDE
 .vscode/
 .idea/
+
+# PyInstaller + Inno Setup build output — never commit these
+build/
+dist/
