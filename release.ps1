@@ -33,11 +33,42 @@ $iss = "$root\ST-Setup.iss"
 
 Write-Host "  Done." -ForegroundColor Green
 
-# ── 2. PyInstaller ────────────────────────────────────────────────────────────
-Write-Host "`n[2/5] Building with PyInstaller..." -ForegroundColor Yellow
+# ── 2. Nuitka (native compilation — no decompilable bytecode) ─────────────────
+Write-Host "`n[2/5] Compiling with Nuitka (this takes ~40 min on first run)..." -ForegroundColor Yellow
 Set-Location $root
-pyinstaller ST.spec --noconfirm 2>&1 | Where-Object { $_ -match "completed|ERROR" } | Select-Object -Last 3
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+
+# Clean previous Nuitka outputs
+Remove-Item -Recurse -Force dist_nuitka -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force dist_nuitka_pm -ErrorAction SilentlyContinue
+
+# Build main app
+python -m nuitka `
+    --standalone `
+    --windows-console-mode=disable `
+    --enable-plugin=pyside6 `
+    --windows-uac-admin `
+    --windows-icon-from-ico=assets/STsoftwareterminalLOGO.ico `
+    --include-data-dir=assets=assets `
+    --include-data-dir=core/tor_bundle=core/tor_bundle `
+    --output-dir=dist_nuitka `
+    --output-filename=ST.exe `
+    --assume-yes-for-downloads `
+    main.py 2>&1 | Where-Object { $_ -match "Nuitka:|ERROR" } | Select-Object -Last 5
+if ($LASTEXITCODE -ne 0) { throw "Nuitka main build failed" }
+
+# Build proc_monitor subprocess
+python -m nuitka `
+    --standalone `
+    --windows-console-mode=disable `
+    --output-dir=dist_nuitka_pm `
+    --output-filename=proc_monitor.exe `
+    --assume-yes-for-downloads `
+    core/proc_monitor.py 2>&1 | Where-Object { $_ -match "Nuitka:|ERROR" } | Select-Object -Last 3
+if ($LASTEXITCODE -ne 0) { throw "Nuitka proc_monitor build failed" }
+
+# Merge proc_monitor.exe into main app dist folder
+Copy-Item "dist_nuitka\proc_monitor.dist\proc_monitor.exe" "dist_nuitka\main.dist\" -Force
+
 Write-Host "  Done." -ForegroundColor Green
 
 # ── 3. Inno Setup ─────────────────────────────────────────────────────────────
@@ -88,7 +119,7 @@ $release = Invoke-RestMethod -Method Post `
     -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases" `
     -Headers $h -Body $body -ContentType "application/json"
 
-$installer = "$root\dist\installer\ST-SoftwareTool-Setup.exe"
+$installer = "$root\dist_nuitka\installer\ST-SoftwareTool-Setup.exe"
 $bytes = [System.IO.File]::ReadAllBytes($installer)
 Write-Host "  Uploading $([Math]::Round($bytes.Length/1MB,1)) MB..." -ForegroundColor Yellow
 
