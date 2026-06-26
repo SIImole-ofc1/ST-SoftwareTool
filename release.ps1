@@ -66,8 +66,10 @@ python -m nuitka `
     core/proc_monitor.py 2>&1 | Where-Object { $_ -match "Nuitka:|ERROR" } | Select-Object -Last 3
 if ($LASTEXITCODE -ne 0) { throw "Nuitka proc_monitor build failed" }
 
-# Merge proc_monitor.exe into main app dist folder
-Copy-Item "dist_nuitka\proc_monitor.dist\proc_monitor.exe" "dist_nuitka\main.dist\" -Force
+# Merge proc_monitor into main app dist folder
+# Copy all files (proc_monitor.exe + its C-extension DLLs like _psutil_windows.pyd)
+# so proc_monitor.exe can find its dependencies at runtime
+Copy-Item "dist_nuitka_pm\proc_monitor.dist\*" "dist_nuitka\main.dist\" -Recurse -Force
 
 Write-Host "  Done." -ForegroundColor Green
 

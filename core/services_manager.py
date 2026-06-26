@@ -54,6 +54,7 @@ class ServicesManager:
             proc = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', _PS_QUERY],
                 capture_output=True, text=True, timeout=60,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             raw = proc.stdout.strip()
             if not raw:
@@ -88,6 +89,7 @@ class ServicesManager:
             p = subprocess.run(
                 ['sc'] + list(args),
                 capture_output=True, text=True, timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             msg = (p.stderr or p.stdout).strip()
             return p.returncode == 0, msg

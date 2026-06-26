@@ -121,6 +121,7 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                 capture_output=True, text=True, timeout=40,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             raw = r.stdout.strip()
             if not raw:
@@ -162,6 +163,7 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                 capture_output=True, text=True, timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if r.returncode == 0:
                 return True, "Device disabled."
@@ -175,6 +177,7 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                 capture_output=True, text=True, timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if r.returncode == 0:
                 return True, "Device enabled."

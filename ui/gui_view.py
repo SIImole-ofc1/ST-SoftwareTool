@@ -537,12 +537,7 @@ class GUIView(QWidget):
         layout.setSpacing(8)
 
         if not self._perf.available:
-            msg = QLabel(
-                "psutil is not installed.\n\n"
-                "Open a terminal and run:\n\n"
-                "    pip install psutil\n\n"
-                "Then restart AppManager."
-            )
+            msg = QLabel("Performance monitor is unavailable.\n\nReinstall ST-SoftwareTool to fix this.")
             msg.setAlignment(Qt.AlignCenter)
             msg.setFont(QFont("Consolas", 10))
             layout.addWidget(msg)
@@ -839,12 +834,7 @@ class GUIView(QWidget):
         layout.setSpacing(6)
 
         if not self._task_backend.available:
-            msg = QLabel(
-                "psutil is not installed.\n\n"
-                "Open a terminal and run:\n\n"
-                "    pip install psutil\n\n"
-                "Then restart ST-SoftwareTool."
-            )
+            msg = QLabel("Task Manager is unavailable.\n\nReinstall ST-SoftwareTool to fix this.")
             msg.setAlignment(Qt.AlignCenter)
             msg.setFont(QFont("Consolas", 10))
             layout.addWidget(msg)
