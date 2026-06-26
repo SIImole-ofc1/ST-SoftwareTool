@@ -1,8 +1,0 @@
-SocksPort 9050
-ControlPort 9051
-HTTPTunnelPort 8118
-CookieAuthentication 1
-DataDirectory c:\ST\core\tor_data
-Log notice stdout
-GeoIPFile c:\ST\core\tor_bundle\data\geoip
-GeoIPv6File c:\ST\core\tor_bundle\data\geoip6
