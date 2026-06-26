@@ -14,7 +14,7 @@ param(
     [string]$Version
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $root = "C:\ST"
 
 Write-Host "`n=== ST-SoftwareTool Release Script ===" -ForegroundColor Cyan
@@ -46,15 +46,14 @@ python -m nuitka `
     --standalone `
     --windows-console-mode=disable `
     --enable-plugin=pyside6 `
-    --windows-uac-admin `
     --windows-icon-from-ico=assets/STsoftwareterminalLOGO.ico `
     --include-data-dir=assets=assets `
     --include-data-dir=core/tor_bundle=core/tor_bundle `
     --output-dir=dist_nuitka `
     --output-filename=ST.exe `
     --assume-yes-for-downloads `
-    main.py 2>&1 | Where-Object { $_ -match "Nuitka:|ERROR" } | Select-Object -Last 5
-if ($LASTEXITCODE -ne 0) { throw "Nuitka main build failed" }
+    main.py 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Nuitka main build failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit 1 }
 
 # Build proc_monitor subprocess
 python -m nuitka `
@@ -63,8 +62,8 @@ python -m nuitka `
     --output-dir=dist_nuitka_pm `
     --output-filename=proc_monitor.exe `
     --assume-yes-for-downloads `
-    core/proc_monitor.py 2>&1 | Where-Object { $_ -match "Nuitka:|ERROR" } | Select-Object -Last 3
-if ($LASTEXITCODE -ne 0) { throw "Nuitka proc_monitor build failed" }
+    core/proc_monitor.py 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Nuitka proc_monitor build failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit 1 }
 
 # Merge proc_monitor into main app dist folder
 # Copy all files (proc_monitor.exe + its C-extension DLLs like _psutil_windows.pyd)
@@ -76,8 +75,8 @@ Write-Host "  Done." -ForegroundColor Green
 # ── 3. Inno Setup ─────────────────────────────────────────────────────────────
 Write-Host "`n[3/5] Compiling installer with Inno Setup..." -ForegroundColor Yellow
 $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-& $iscc "$root\ST-Setup.iss" 2>&1 | Where-Object { $_ -match "Successful|Error" }
-if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+& $iscc "$root\ST-Setup.iss" 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Inno Setup failed" -ForegroundColor Red; exit 1 }
 Write-Host "  Done." -ForegroundColor Green
 
 # ── 4. GitHub Release ─────────────────────────────────────────────────────────

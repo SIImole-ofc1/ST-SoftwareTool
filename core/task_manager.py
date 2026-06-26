@@ -79,6 +79,7 @@ class TaskManagerBackend:
 
         if not os.path.exists(monitor):
             return
+        flags = subprocess.CREATE_NO_WINDOW if getattr(sys, 'frozen', False) else 0
         try:
             self._proc = subprocess.Popen(
                 cmd,
@@ -87,7 +88,7 @@ class TaskManagerBackend:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=flags,
             )
             self.available = True
         except Exception:
