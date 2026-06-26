@@ -1,5 +1,7 @@
 import os
+import sys
 import threading
+import winreg
 from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
@@ -21,6 +23,7 @@ from ui.task_table import ProcessTableModel, HistoryTableModel, TaskSortProxy
 from ui.services_view import ServicesView
 from ui.startup_view import StartupView
 from ui.device_settings_view import DeviceSettingsView
+from ui.antivirus_view import AntivirusView
 
 # (column_index, Qt.SortOrder) pairs used by the sort combo
 _TASK_SORT_PROXY = [
@@ -244,6 +247,7 @@ class RenameDialog(QDialog):
 class GUIView(QWidget):
     switch_to_terminal = Signal()
     settings_applied   = Signal(str, bool)  # (theme_key, suggestions_enabled)
+    settings_changed   = Signal()            # protection / privacy settings changed
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -279,9 +283,10 @@ class GUIView(QWidget):
         self._gpu_worker.details_ready.connect(self._on_gpu_details)
 
         # Lazy-loaded tab widgets (created once, reused)
-        self._svc_view     = ServicesView(self)
-        self._startup_view = StartupView(self)
-        self._dev_settings = DeviceSettingsView(self)
+        self._svc_view        = ServicesView(self)
+        self._startup_view    = StartupView(self)
+        self._dev_settings    = DeviceSettingsView(self)
+        self._antivirus_view  = AntivirusView(self)
 
         self._build_ui()
         self.refresh()
@@ -307,6 +312,7 @@ class GUIView(QWidget):
         self._task_backend.cleanup()
         self._svc_view.cleanup()
         self._startup_view.cleanup()
+        self._antivirus_view.cleanup()
 
     # ── construction ──────────────────────────────────────────────────────────
 
@@ -325,7 +331,8 @@ class GUIView(QWidget):
         self._svc_tab_idx     = self.tabs.addTab(self._svc_view,       "Services")
         self.tabs.addTab(self._tab_settings(),    "Settings")
         self._devsettings_tab_idx = self.tabs.addTab(self._dev_settings, "Device Settings")
-        self._startup_tab_idx = self.tabs.addTab(self._startup_view,   "Advanced Startup")
+        self._startup_tab_idx   = self.tabs.addTab(self._startup_view,   "Advanced Startup")
+        self._antivirus_tab_idx = self.tabs.addTab(self._antivirus_view, "AntiVirus")
         self.tabs.currentChanged.connect(self._on_main_tab_changed)
 
     # ── tab: App Manager ──────────────────────────────────────────────────────
@@ -1008,11 +1015,17 @@ class GUIView(QWidget):
     # ── tab: Settings ─────────────────────────────────────────────────────────
 
     def _tab_settings(self) -> QWidget:
+        # Scroll area so groups don't get squashed on small windows
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(14)
 
+        # ── Theme ─────────────────────────────────────────────────────────────
         theme_box = QGroupBox("Theme")
         tl = QVBoxLayout(theme_box)
         self.rb_dark    = QRadioButton("Dark  —  Black & Green")
@@ -1031,6 +1044,7 @@ class GUIView(QWidget):
         }.get(current, self.rb_dark).setChecked(True)
         layout.addWidget(theme_box)
 
+        # ── Default View ──────────────────────────────────────────────────────
         view_box = QGroupBox("Default View on Startup")
         vl = QVBoxLayout(view_box)
         self.rb_term = QRadioButton("Terminal")
@@ -1044,6 +1058,7 @@ class GUIView(QWidget):
         vl.addWidget(self.rb_gui)
         layout.addWidget(view_box)
 
+        # ── Terminal ──────────────────────────────────────────────────────────
         terminal_box = QGroupBox("Terminal")
         tbox_l = QVBoxLayout(terminal_box)
         self.chk_suggestions = QCheckBox("Show command suggestions while typing")
@@ -1053,6 +1068,53 @@ class GUIView(QWidget):
         tbox_l.addWidget(self.chk_suggestions)
         layout.addWidget(terminal_box)
 
+        # ── Protection & Privacy ──────────────────────────────────────────────
+        prot_box = QGroupBox("Protection & Privacy")
+        pl = QVBoxLayout(prot_box)
+
+        self.chk_run_background = QCheckBox(
+            "Keep ST-SoftwareTool running in the background when window is closed"
+        )
+        self.chk_run_background.setChecked(
+            self.manager.settings.get('run_in_background', False)
+        )
+
+        self.chk_start_windows = QCheckBox(
+            "Start ST-SoftwareTool automatically with Windows"
+        )
+        self.chk_start_windows.setChecked(
+            self.manager.settings.get('start_with_windows', False)
+        )
+
+        self.chk_auto_block = QCheckBox(
+            "Automatically block critical threats detected during scans"
+        )
+        self.chk_auto_block.setChecked(
+            self.manager.settings.get('auto_block_threats', True)
+        )
+
+        self.chk_privacy_monitor = QCheckBox(
+            "Show popup notification when camera or microphone is turned on"
+        )
+        self.chk_privacy_monitor.setChecked(
+            self.manager.settings.get('monitor_privacy', True)
+        )
+
+        self.chk_hourly_scan = QCheckBox(
+            "Run automatic virus scan every hour and notify when complete"
+        )
+        self.chk_hourly_scan.setChecked(
+            self.manager.settings.get('hourly_scan', False)
+        )
+
+        for chk in (self.chk_run_background, self.chk_start_windows,
+                    self.chk_auto_block, self.chk_privacy_monitor,
+                    self.chk_hourly_scan):
+            pl.addWidget(chk)
+
+        layout.addWidget(prot_box)
+
+        # ── Manage Categories ─────────────────────────────────────────────────
         cat_box = QGroupBox("Manage Categories")
         kal = QVBoxLayout(cat_box)
         self.settings_cat_list = QListWidget()
@@ -1077,7 +1139,8 @@ class GUIView(QWidget):
         btn_apply.clicked.connect(self._apply_settings_btn)
         layout.addWidget(btn_apply)
 
-        return tab
+        scroll.setWidget(tab)
+        return scroll
 
     # ── refresh ───────────────────────────────────────────────────────────────
 
@@ -1286,8 +1349,49 @@ class GUIView(QWidget):
         sugg = self.chk_suggestions.isChecked()
         self.manager.settings["default_view"]        = v
         self.manager.settings["terminal_suggestions"] = sugg
+
+        # Protection & Privacy settings
+        self.manager.settings['run_in_background']  = self.chk_run_background.isChecked()
+        self.manager.settings['auto_block_threats'] = self.chk_auto_block.isChecked()
+        self.manager.settings['monitor_privacy']    = self.chk_privacy_monitor.isChecked()
+        self.manager.settings['hourly_scan']        = self.chk_hourly_scan.isChecked()
+        want_startup = self.chk_start_windows.isChecked()
+        self.manager.settings['start_with_windows'] = want_startup
+        self._set_startup_registry(want_startup)
+
         self.manager.save()
         self.settings_applied.emit(t, sugg)
+        self.settings_changed.emit()
+
+    @staticmethod
+    def _set_startup_registry(enable: bool) -> None:
+        _RUN_KEY  = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+        _APP_NAME = 'ST-SoftwareTool'
+        _EXE_PATH = sys.executable  # python.exe or the frozen exe
+        # Prefer the script path when running as python script
+        try:
+            import __main__
+            script = getattr(__main__, '__file__', None)
+            if script:
+                _EXE_PATH = f'"{sys.executable}" "{os.path.abspath(script)}"'
+            else:
+                _EXE_PATH = f'"{sys.executable}"'
+        except Exception:
+            pass
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE
+            )
+            if enable:
+                winreg.SetValueEx(key, _APP_NAME, 0, winreg.REG_SZ, _EXE_PATH)
+            else:
+                try:
+                    winreg.DeleteValue(key, _APP_NAME)
+                except FileNotFoundError:
+                    pass
+            winreg.CloseKey(key)
+        except OSError:
+            pass
 
     def _add_category(self):
         name = self.cat_name_edit.text().strip()
