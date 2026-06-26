@@ -2,35 +2,180 @@ import os
 from PySide6.QtWidgets import (
     QMainWindow, QStackedWidget, QMessageBox,
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialogButtonBox,
+    QSystemTrayIcon, QMenu,
 )
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from .terminal_widget import TerminalWidget
 from .gui_view import GUIView
+from core.privacy_monitor import PrivacyMonitor
+from core.background_tasks import BackgroundScanner
 
 
 class MainWindow(QMainWindow):
     def __init__(self, manager, processor):
         super().__init__()
-        self.manager   = manager
-        self.processor = processor
+        self.manager      = manager
+        self.processor    = processor
+        self._force_quit  = False   # set True to bypass minimize-to-tray
         self.setWindowTitle("ST-SoftwareTool")
         self.setMinimumSize(820, 580)
         self.resize(960, 660)
 
         _icon = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "assets", "STsoftwareterminalLOGO.png.png")
-        if os.path.exists(_icon):
-            self.setWindowIcon(QIcon(_icon))
+        self._app_icon = QIcon(_icon) if os.path.exists(_icon) else QIcon()
+        self.setWindowIcon(self._app_icon)
+
+        # Instantiate scanner/privacy before building menu (menu references them)
+        self._privacy = PrivacyMonitor(self)
+        self._scanner = BackgroundScanner(self)
 
         self._build_menu()
         self._build_central()
+        self._build_tray()
         self._apply_theme()
+
+        # Wire up privacy monitor
+        self._privacy.camera_started.connect(self._on_camera_on)
+        self._privacy.camera_stopped.connect(self._on_camera_off)
+        self._privacy.mic_started.connect(self._on_mic_on)
+        self._privacy.mic_stopped.connect(self._on_mic_off)
+        self._privacy.set_enabled(
+            self.manager.settings.get('monitor_privacy', True)
+        )
+        self._privacy.start()
+
+        # Wire up hourly background scanner
+        self._scanner.scan_started.connect(self._on_auto_scan_started)
+        self._scanner.scan_done.connect(self._on_auto_scan_done)
+        self._scanner.threat_blocked.connect(self._on_auto_blocked)
+        self._scanner.set_auto_block(
+            self.manager.settings.get('auto_block_threats', True)
+        )
+        if self.manager.settings.get('hourly_scan', False):
+            self._scanner.start()
 
         if manager.settings.get("default_view", "terminal") == "gui":
             self._go_gui()
         else:
             self._go_terminal()
+
+    # ── system tray ───────────────────────────────────────────────────────────
+
+    def _build_tray(self):
+        self._tray = QSystemTrayIcon(self._app_icon, self)
+        self._tray.setToolTip("ST-SoftwareTool")
+
+        menu = QMenu()
+        a_open  = QAction("Open ST-SoftwareTool", self)
+        a_scan  = QAction("Quick Scan Now", self)
+        a_exit  = QAction("Exit", self)
+        a_open.triggered.connect(self._tray_open)
+        a_scan.triggered.connect(self._scanner.trigger_now)
+        a_exit.triggered.connect(self._quit_app)
+        menu.addAction(a_open)
+        menu.addSeparator()
+        menu.addAction(a_scan)
+        menu.addSeparator()
+        menu.addAction(a_exit)
+
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(self._on_tray_activated)
+        self._tray.show()
+
+    def _tray_open(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self._tray_open()
+
+    def _notify(self, title: str, msg: str,
+                icon=QSystemTrayIcon.Information, ms: int = 5000):
+        if self._tray.isSystemTrayAvailable():
+            self._tray.showMessage(title, msg, icon, ms)
+
+    # ── privacy monitor callbacks ─────────────────────────────────────────────
+
+    def _on_camera_on(self, apps: str):
+        self._notify(
+            "ST-SoftwareTool  —  Camera Alert",
+            f"Camera is now ON\nUsed by: {apps}",
+            QSystemTrayIcon.Warning, 6000,
+        )
+
+    def _on_camera_off(self):
+        self._notify(
+            "ST-SoftwareTool  —  Camera",
+            "Camera turned OFF",
+            QSystemTrayIcon.Information, 3000,
+        )
+
+    def _on_mic_on(self, apps: str):
+        self._notify(
+            "ST-SoftwareTool  —  Microphone Alert",
+            f"Microphone is now ON\nUsed by: {apps}",
+            QSystemTrayIcon.Warning, 6000,
+        )
+
+    def _on_mic_off(self):
+        self._notify(
+            "ST-SoftwareTool  —  Microphone",
+            "Microphone turned OFF",
+            QSystemTrayIcon.Information, 3000,
+        )
+
+    # ── background scanner callbacks ──────────────────────────────────────────
+
+    def _on_auto_scan_started(self):
+        self._notify(
+            "ST AntiVirus",
+            "Automatic hourly scan started…",
+            QSystemTrayIcon.Information, 3000,
+        )
+
+    def _on_auto_scan_done(self, total: int, blocked: int):
+        if total == 0:
+            self._notify(
+                "ST AntiVirus  —  Scan Complete",
+                "Hourly scan finished. No threats found. Your system is clean.",
+                QSystemTrayIcon.Information, 6000,
+            )
+        elif blocked > 0:
+            self._notify(
+                "ST AntiVirus  —  Threats Blocked!",
+                f"Scan complete: {total} threat(s) found.\n"
+                f"{blocked} critical threat(s) were automatically blocked.",
+                QSystemTrayIcon.Critical, 8000,
+            )
+        else:
+            self._notify(
+                "ST AntiVirus  —  Threats Detected",
+                f"Scan complete: {total} threat(s) found.\n"
+                f"Open ST AntiVirus to review and block them.",
+                QSystemTrayIcon.Warning, 8000,
+            )
+
+    def _on_auto_blocked(self, threat):
+        self._notify(
+            "ST AntiVirus  —  Threat Blocked",
+            f"Automatically blocked: {threat.category}\n{threat.path}",
+            QSystemTrayIcon.Critical, 5000,
+        )
+
+    # ── settings changed (from gui) ───────────────────────────────────────────
+
+    def _on_settings_changed(self):
+        s = self.manager.settings
+        self._privacy.set_enabled(s.get('monitor_privacy', True))
+        self._scanner.set_auto_block(s.get('auto_block_threats', True))
+        if s.get('hourly_scan', False):
+            self._scanner.start()
+        else:
+            self._scanner.stop()
 
     # ── menu ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +194,7 @@ class MainWindow(QMainWindow):
 
         a_exit = QAction("Exit", self)
         a_exit.setShortcut("Alt+F4")
-        a_exit.triggered.connect(self.close)
+        a_exit.triggered.connect(self._quit_app)   # always fully quit
         file_m.addAction(a_exit)
 
         # View
@@ -85,29 +230,23 @@ class MainWindow(QMainWindow):
         a_scan.triggered.connect(self._menu_scan)
         tools_m.addAction(a_scan)
 
+        a_av_scan = QAction("Quick AntiVirus Scan", self)
+        a_av_scan.triggered.connect(self._scanner.trigger_now)
+        tools_m.addAction(a_av_scan)
+
         tools_m.addSeparator()
 
         theme_sub = tools_m.addMenu("Themes")
-
-        a_t1 = QAction("Dark  —  Black & Green", self)
-        a_t1.triggered.connect(lambda: self._set_theme("dark"))
-        theme_sub.addAction(a_t1)
-
-        a_t2 = QAction("Dark  —  Black & White", self)
-        a_t2.triggered.connect(lambda: self._set_theme("dark_bw"))
-        theme_sub.addAction(a_t2)
-
-        a_t3 = QAction("Light  —  Black & White", self)
-        a_t3.triggered.connect(lambda: self._set_theme("light"))
-        theme_sub.addAction(a_t3)
-
-        a_t4 = QAction("High Contrast", self)
-        a_t4.triggered.connect(lambda: self._set_theme("hc"))
-        theme_sub.addAction(a_t4)
-
-        a_t5 = QAction("Classic", self)
-        a_t5.triggered.connect(lambda: self._set_theme("win95"))
-        theme_sub.addAction(a_t5)
+        for label, key in (
+            ("Dark  —  Black & Green", "dark"),
+            ("Dark  —  Black & White", "dark_bw"),
+            ("Light  —  Black & White", "light"),
+            ("High Contrast", "hc"),
+            ("Classic", "win95"),
+        ):
+            a = QAction(label, self)
+            a.triggered.connect(lambda _=False, k=key: self._set_theme(k))
+            theme_sub.addAction(a)
 
         # Help
         help_m = mb.addMenu("Help")
@@ -124,13 +263,14 @@ class MainWindow(QMainWindow):
 
         self.terminal = TerminalWidget(self.manager, self.processor)
         self.terminal.switch_to_gui.connect(self._go_gui)
-        self.terminal.exit_app.connect(self.close)
+        self.terminal.exit_app.connect(self._quit_app)
         self.terminal.theme_changed.connect(self._set_theme)
         self.stack.addWidget(self.terminal)   # index 0
 
         self.gui = GUIView(self.manager)
         self.gui.switch_to_terminal.connect(self._go_terminal)
         self.gui.settings_applied.connect(self._on_settings_applied)
+        self.gui.settings_changed.connect(self._on_settings_changed)
         self.stack.addWidget(self.gui)         # index 1
 
     # ── switching ─────────────────────────────────────────────────────────────
@@ -175,9 +315,6 @@ class MainWindow(QMainWindow):
     def _apply_theme(self):
         theme = self.manager.settings.get("theme", "dark")
 
-        # Each stylesheet covers every common widget type so the GUI view
-        # inherits the correct colours. The terminal widget overrides its own
-        # sub-widgets explicitly, so it is unaffected.
         if theme == "dark":
             qss = """
                 * { outline: 0; }
@@ -310,7 +447,6 @@ class MainWindow(QMainWindow):
                 QTextEdit             { background: #d0d0d0; color: #000000; border: 1px solid #808080; }
                 QLineEdit             { background: #d0d0d0; color: #000000; border: 1px solid #808080; border-radius: 3px; padding: 3px 6px; }
                 QLineEdit:focus       { border-color: #000000; }
-                QLineEdit::placeholder-text { color: #666666; }
                 QPushButton           { background: #b8b8b8; color: #000000; border: 1px solid #808080; border-radius: 3px; padding: 4px 12px; }
                 QPushButton:hover     { background: #a8a8a8; }
                 QPushButton:pressed   { background: #989898; }
@@ -438,14 +574,12 @@ class MainWindow(QMainWindow):
                                         border-top: 2px solid #808080; border-left: 2px solid #808080;
                                         border-right: 2px solid #ffffff; border-bottom: 2px solid #ffffff; }
                 QLineEdit:focus       { border-color: #000080; }
-                QLineEdit::placeholder-text { color: #808080; }
                 QPushButton           { background: #c0c0c0; color: #000000; padding: 3px 10px; min-width: 60px;
                                         border-top: 2px solid #ffffff; border-left: 2px solid #ffffff;
                                         border-right: 2px solid #808080; border-bottom: 2px solid #808080; }
                 QPushButton:hover     { background: #d0d0d0; }
                 QPushButton:pressed   { border-top: 2px solid #808080; border-left: 2px solid #808080;
-                                        border-right: 2px solid #ffffff; border-bottom: 2px solid #ffffff;
-                                        padding-top: 4px; padding-left: 12px; }
+                                        border-right: 2px solid #ffffff; border-bottom: 2px solid #ffffff; }
                 QPushButton:disabled  { color: #808080; }
                 QComboBox             { background: #ffffff; color: #000000; padding: 2px 4px;
                                         border-top: 2px solid #808080; border-left: 2px solid #808080;
@@ -453,8 +587,7 @@ class MainWindow(QMainWindow):
                 QComboBox::drop-down  { background: #c0c0c0; width: 18px;
                                         border-top: 2px solid #ffffff; border-left: 2px solid #ffffff;
                                         border-right: 2px solid #808080; border-bottom: 2px solid #808080; }
-                QComboBox QAbstractItemView { background: #ffffff; color: #000000;
-                                             border: 2px solid #808080;
+                QComboBox QAbstractItemView { background: #ffffff; color: #000000; border: 2px solid #808080;
                                              selection-background-color: #000080; selection-color: #ffffff; }
                 QRadioButton          { color: #000000; spacing: 6px; background: transparent; }
                 QRadioButton::indicator { width: 13px; height: 13px; border: 2px solid #808080; border-radius: 7px; background: #ffffff; }
@@ -484,12 +617,37 @@ class MainWindow(QMainWindow):
                 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: #b0b0b0; }
                 QDialogButtonBox QPushButton { min-width: 70px; }
             """
+        else:
+            qss = ""
 
         self.setStyleSheet(qss)
 
+    # ── close / quit ──────────────────────────────────────────────────────────
+
+    def _quit_app(self):
+        """Unconditionally quit — bypasses minimize-to-tray."""
+        self._force_quit = True
+        self.close()
+
     def closeEvent(self, event):
+        if not self._force_quit and self.manager.settings.get('run_in_background', False):
+            event.ignore()
+            self.hide()
+            self._notify(
+                "ST-SoftwareTool",
+                "Running in the background.\n"
+                "Right-click the tray icon to open or exit.",
+                QSystemTrayIcon.Information, 4000,
+            )
+        else:
+            self._do_cleanup()
+            event.accept()
+
+    def _do_cleanup(self):
         self.gui.cleanup()
-        super().closeEvent(event)
+        self._scanner.stop()
+        self._privacy.shutdown()
+        self._tray.hide()
 
     # ── menu actions ──────────────────────────────────────────────────────────
 
@@ -524,7 +682,6 @@ class MainWindow(QMainWindow):
         root.setSpacing(10)
         root.setContentsMargins(16, 16, 16, 12)
 
-        # Header row: icon + title
         hdr = QHBoxLayout()
         _icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                   'assets', 'STsoftwareterminalLOGO.png.png')
@@ -539,18 +696,15 @@ class MainWindow(QMainWindow):
         hdr.addStretch()
         root.addLayout(hdr)
 
-        # Short description
         short_lbl = QLabel(_SHORT)
         short_lbl.setWordWrap(True)
         root.addWidget(short_lbl)
 
-        # Full description (hidden by default)
         full_lbl = QLabel(_FULL)
         full_lbl.setWordWrap(True)
         full_lbl.setVisible(False)
         root.addWidget(full_lbl)
 
-        # Toggle button
         toggle_btn = QPushButton("See full description")
         toggle_btn.setFixedWidth(160)
 
@@ -563,7 +717,6 @@ class MainWindow(QMainWindow):
         toggle_btn.clicked.connect(_toggle)
         root.addWidget(toggle_btn)
 
-        # Keyboard shortcuts
         shortcuts = QLabel(
             "<b>Keyboard shortcuts:</b><br>"
             "Ctrl+1  —  Terminal mode<br>"
@@ -575,7 +728,6 @@ class MainWindow(QMainWindow):
         shortcuts.setTextFormat(Qt.RichText)
         root.addWidget(shortcuts)
 
-        # OK button
         btns = QDialogButtonBox(QDialogButtonBox.Ok)
         btns.accepted.connect(dlg.accept)
         root.addWidget(btns)
