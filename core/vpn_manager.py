@@ -26,9 +26,17 @@ import winreg
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
+import sys as _sys
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-_TOR_DIR    = os.path.join(_MODULE_DIR, 'tor_bundle')
-_DATA_DIR   = os.path.join(_MODULE_DIR, 'tor_data')
+if getattr(_sys, 'frozen', False):
+    # Nuitka standalone: data dirs live next to ST.exe, not inside the binary
+    _APP_DIR  = os.path.dirname(_sys.executable)
+    _TOR_DIR  = os.path.join(_APP_DIR, 'core', 'tor_bundle')
+    _DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
+                             'ST-SoftwareTool', 'tor_data')
+else:
+    _TOR_DIR  = os.path.join(_MODULE_DIR, 'tor_bundle')
+    _DATA_DIR = os.path.join(_MODULE_DIR, 'tor_data')
 
 SOCKS_PORT   = 9050
 CONTROL_PORT = 9051
