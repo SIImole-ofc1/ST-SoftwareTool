@@ -9,7 +9,7 @@ import urllib.request
 
 from PySide6.QtWidgets import QMessageBox
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 # Change this to your actual Cloudflare Pages domain after deploying
 MANIFEST_URL = "https://st-softwaretool.pages.dev/download/latest.json"
 
