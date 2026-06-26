@@ -24,6 +24,7 @@ from ui.services_view import ServicesView
 from ui.startup_view import StartupView
 from ui.device_settings_view import DeviceSettingsView
 from ui.antivirus_view import AntivirusView
+from ui.vpn_view import VpnView
 
 # (column_index, Qt.SortOrder) pairs used by the sort combo
 _TASK_SORT_PROXY = [
@@ -287,6 +288,7 @@ class GUIView(QWidget):
         self._startup_view    = StartupView(self)
         self._dev_settings    = DeviceSettingsView(self)
         self._antivirus_view  = AntivirusView(self)
+        self._vpn_view        = VpnView(self)
 
         self._build_ui()
         self.refresh()
@@ -313,6 +315,7 @@ class GUIView(QWidget):
         self._svc_view.cleanup()
         self._startup_view.cleanup()
         self._antivirus_view.cleanup()
+        self._vpn_view.cleanup()
 
     # ── construction ──────────────────────────────────────────────────────────
 
@@ -333,6 +336,7 @@ class GUIView(QWidget):
         self._devsettings_tab_idx = self.tabs.addTab(self._dev_settings, "Device Settings")
         self._startup_tab_idx   = self.tabs.addTab(self._startup_view,   "Advanced Startup")
         self._antivirus_tab_idx = self.tabs.addTab(self._antivirus_view, "AntiVirus")
+        self.tabs.addTab(self._vpn_view, "VPN")
         self.tabs.currentChanged.connect(self._on_main_tab_changed)
 
     # ── tab: App Manager ──────────────────────────────────────────────────────
