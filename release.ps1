@@ -70,6 +70,11 @@ if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Nuitka proc_monitor build failed (
 # so proc_monitor.exe can find its dependencies at runtime
 Copy-Item "dist_nuitka_pm\proc_monitor.dist\*" "dist_nuitka\main.dist\" -Recurse -Force
 
+# Nuitka --include-data-dir silently skips .exe and .dll files from data dirs.
+# Manually copy the full tor_bundle so tor.exe and tor-gencert.exe are included.
+Remove-Item "dist_nuitka\main.dist\core\tor_bundle" -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item "core\tor_bundle" "dist_nuitka\main.dist\core\" -Recurse -Force
+
 Write-Host "  Done." -ForegroundColor Green
 
 # ── 3. Inno Setup ─────────────────────────────────────────────────────────────

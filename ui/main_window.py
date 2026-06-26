@@ -332,7 +332,10 @@ class MainWindow(QMainWindow):
 
     def _set_theme(self, theme: str):
         self.manager.settings["theme"] = theme
-        self.manager.save()
+        try:
+            self.manager.save()
+        except Exception:
+            pass
         self.terminal.set_theme(theme)
         self.gui.set_perf_theme(theme)
         self._apply_theme()

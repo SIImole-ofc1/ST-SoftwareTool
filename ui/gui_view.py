@@ -1361,9 +1361,12 @@ class GUIView(QWidget):
         self.manager.settings['start_with_windows'] = want_startup
         self._set_startup_registry(want_startup)
 
-        self.manager.save()
         self.settings_applied.emit(t, sugg)
         self.settings_changed.emit()
+        try:
+            self.manager.save()
+        except Exception:
+            pass
 
     @staticmethod
     def _set_startup_registry(enable: bool) -> None:

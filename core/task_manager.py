@@ -12,7 +12,17 @@ Flow:
 """
 import os, sys, json, subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+def _log(msg: str) -> None:
+    try:
+        d = Path(os.environ.get('APPDATA', '')) / 'ST-SoftwareTool'
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / 'tm_debug.log', 'a') as f:
+            f.write(f"{datetime.now()}: {msg}\n")
+    except Exception:
+        pass
 
 
 # ── data classes ─────────────────────────────────────────────────────────────
@@ -78,6 +88,7 @@ class TaskManagerBackend:
             cmd = [sys.executable, monitor]
 
         if not os.path.exists(monitor):
+            _log(f"proc_monitor not found: {monitor}")
             return
         flags = subprocess.CREATE_NO_WINDOW if getattr(sys, 'frozen', False) else 0
         try:
@@ -91,7 +102,9 @@ class TaskManagerBackend:
                 creationflags=flags,
             )
             self.available = True
-        except Exception:
+            _log(f"proc_monitor started OK: {cmd}")
+        except Exception as exc:
+            _log(f"proc_monitor Popen FAILED: {exc} | cmd={cmd} | flags={flags}")
             self._proc = None
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -105,6 +118,7 @@ class TaskManagerBackend:
             self._proc.stdin.flush()
             raw = self._proc.stdout.readline()   # GIL released here while subprocess scans
             if not raw:
+                _log("proc_monitor stdout EOF — process crashed after start")
                 self.available = False
                 return []
             data = json.loads(raw)
