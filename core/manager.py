@@ -1,10 +1,18 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+# When running as a frozen .exe installed to Program Files, %AppData% is the
+# correct writable location for user data.  During normal development the data/
+# folder next to the repo root is used as before.
+if getattr(sys, 'frozen', False):
+    DATA_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'ST-SoftwareTool'
+else:
+    DATA_DIR = Path(__file__).parent.parent / "data"
+
 DATA_FILE = DATA_DIR / "apps.json"
 
 DEFAULT_CATEGORIES = ["General", "Games", "Tools", "Browser", "Media", "Development", "Office"]
