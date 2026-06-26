@@ -11,6 +11,10 @@ data/apps.json
 debug.log
 *.log
 
+# Tor runtime files — large binaries, not needed for web deployment
+core/tor_bundle/
+core/tor_data/
+
 # Claude internal
 .claude/
 
