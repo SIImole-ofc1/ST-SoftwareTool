@@ -439,20 +439,46 @@
                 <div style="padding:16px">
                     <h3>ST-SoftwareTool for Windows</h3>
                     <p>Professional management utility for Windows 10 and Windows 11. Ready to run - no additional setup required.</p>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                         <a href="download/ST-Setup-1.0.0.exe" class="btn btn-primary" download>Download Now</a>
+                        <span style="font-size:11px;color:#555">v1.0.0 &nbsp;&#183;&nbsp; Windows 10/11 x64</span>
+                    </div>
+
+                    <div class="group-box" style="margin-top:16px;border-color:#c04000">
+                        <div class="group-box-title" style="color:#c04000">If Windows warns you</div>
+                        <p style="font-size:11px;line-height:1.8;color:#222;margin:0">
+                            Windows SmartScreen flags <strong>all</strong> new unsigned software downloaded from the internet.
+                            ST-SoftwareTool is completely safe. To install:
+                        </p>
+                        <ol style="font-size:11px;line-height:2;color:#222;margin:6px 0 0 16px;padding:0">
+                            <li>Click <strong>More info</strong> on the blue SmartScreen screen</li>
+                            <li>Click <strong>Run anyway</strong></li>
+                        </ol>
+                        <p style="font-size:11px;color:#555;margin:6px 0 0">
+                            Alternatively: right-click the downloaded file &rarr; <strong>Properties</strong> &rarr; tick <strong>Unblock</strong> &rarr; OK, then run it.
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <div class="window" style="min-width:220px;flex:1">
-                <div class="title-bar"><div class="title-bar-left">Requirements</div></div>
-                <div style="padding:16px">
-                    <ul class="req-list">
-                        <li>Windows 10 / 11 (64-bit)</li>
-                        <li>Administrator rights for full feature access</li>
-                        <li>NVIDIA GPU recommended for GPU monitor</li>
-                    </ul>
+            <div style="display:flex;flex-direction:column;gap:10px;min-width:220px;flex:1">
+                <div class="window">
+                    <div class="title-bar"><div class="title-bar-left">Requirements</div></div>
+                    <div style="padding:16px">
+                        <ul class="req-list">
+                            <li>Windows 10 / 11 (64-bit)</li>
+                            <li>Administrator rights for full feature access</li>
+                            <li>NVIDIA GPU recommended for GPU monitor</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="window">
+                    <div class="title-bar"><div class="title-bar-left">Why does Windows warn me?</div></div>
+                    <div style="padding:14px;font-size:11px;line-height:1.8;color:#222">
+                        <p style="margin:0 0 6px">Microsoft SmartScreen checks every downloaded <code>.exe</code> against a reputation database. New software with few downloads is flagged automatically regardless of whether it is safe.</p>
+                        <p style="margin:0">ST-SoftwareTool does <strong>not</strong> connect to any external server, collect any data, or modify your system without your permission. All operations are local and visible.</p>
+                    </div>
                 </div>
             </div>
 
