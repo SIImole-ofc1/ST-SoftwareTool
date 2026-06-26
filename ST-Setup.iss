@@ -8,7 +8,7 @@
 ;      Output: dist\installer\ST-Setup-1.0.0.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.1"
+#define AppVersion   "1.0.2"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
