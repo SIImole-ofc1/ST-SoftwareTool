@@ -69,17 +69,24 @@ class TaskManagerBackend:
         self._start_subprocess()
 
     def _start_subprocess(self) -> None:
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'proc_monitor.py')
-        if not os.path.exists(script):
+        if getattr(sys, 'frozen', False):
+            # Running as a frozen .exe — proc_monitor is a separate bundled executable
+            monitor = os.path.join(os.path.dirname(sys.executable), 'proc_monitor.exe')
+            cmd = [monitor]
+        else:
+            monitor = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'proc_monitor.py')
+            cmd = [sys.executable, monitor]
+
+        if not os.path.exists(monitor):
             return
         try:
             self._proc = subprocess.Popen(
-                [sys.executable, script],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
-                bufsize=1,          # line-buffered — each JSON line is one logical message
+                bufsize=1,
             )
             self.available = True
         except Exception:
