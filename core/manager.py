@@ -382,6 +382,7 @@ foreach ($base in ($dirs | Select-Object -Unique)) {
             proc = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps_code],
                 capture_output=True, text=True, timeout=60,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             found = []
             seen_names: set = set()

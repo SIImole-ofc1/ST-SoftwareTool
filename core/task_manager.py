@@ -87,6 +87,7 @@ class TaskManagerBackend:
                 stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             self.available = True
         except Exception:
@@ -159,6 +160,7 @@ class TaskManagerBackend:
             r = subprocess.run(
                 ['taskkill', '/f', '/pid', str(pid)],
                 capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             if r.returncode == 0:
                 return True, ''
