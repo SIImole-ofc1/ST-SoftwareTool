@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QProgressBar, QFrame, QSystemTrayIcon, QMessageBox,
-    QSizePolicy,
+    QSizePolicy, QCheckBox,
 )
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QPixmap, QFont
@@ -72,6 +72,7 @@ class VpnView(QWidget):
         self._worker: _ConnectWorker | None = None
         self._dl_worker: _DownloadWorker | None = None
         self._ip_worker: _IpWorker | None = None
+        self._was_connected = False
 
         self._build_ui()
 
@@ -171,6 +172,31 @@ class VpnView(QWidget):
 
         btn_row.addStretch()
         root.addLayout(btn_row)
+
+        # ── Kill Switch toggle ────────────────────────────────────────────────
+        ks_row = QHBoxLayout()
+        ks_row.addStretch()
+        self._ks_chk = QCheckBox('Kill Switch')
+        self._ks_chk.setToolTip(
+            'When the VPN drops unexpectedly, ALL internet traffic is immediately\n'
+            'blocked — your real IP cannot leak even if Tor crashes.\n\n'
+            'Note: requires administrator privileges to add Windows Firewall rules.'
+        )
+        self._ks_chk.stateChanged.connect(self._on_ks_toggle)
+        ks_row.addWidget(self._ks_chk)
+        self._ks_status_lbl = QLabel('  ● BLOCKING ALL TRAFFIC')
+        self._ks_status_lbl.setStyleSheet(
+            'color: #ff4444; font-size: 9px; font-weight: bold;'
+        )
+        self._ks_status_lbl.setVisible(False)
+        ks_row.addWidget(self._ks_status_lbl)
+        ks_row.addStretch()
+        root.addLayout(ks_row)
+
+        ks_warn = QLabel('⚠  Kill Switch requires the app to be run as Administrator.')
+        ks_warn.setAlignment(Qt.AlignCenter)
+        ks_warn.setStyleSheet('color: #ff4444; font-size: 9px;')
+        root.addWidget(ks_warn)
 
         # ── Tor not found hint ────────────────────────────────────────────────
         self._hint_lbl = QLabel(
@@ -298,6 +324,11 @@ class VpnView(QWidget):
             self._do_connect()
 
     def _do_connect(self):
+        # Remove any active kill switch block so Tor can connect
+        if self._mgr.is_ks_active():
+            self._mgr.ks_deactivate()
+            self._ks_status_lbl.setVisible(False)
+
         # Auto-select the best available stealth mode (obfs4 > Snowflake > plain Tor)
         stealth_desc = self._mgr.auto_stealth()
         self._stealth_lbl.setText(f'Stealth: {stealth_desc}')
@@ -333,6 +364,7 @@ class VpnView(QWidget):
             QMessageBox.critical(self, 'ST-VPN — Connection Failed', err)
             return
 
+        self._was_connected = True
         self._status_lbl.setText('● CONNECTED  —  Your traffic is anonymized')
         self._status_lbl.setStyleSheet('color: #00cc33; font-weight: bold;')
         self._connect_btn.setText('Disconnect')
@@ -349,6 +381,7 @@ class VpnView(QWidget):
         QTimer.singleShot(3000, self._update_circuit)
 
     def _do_disconnect(self):
+        self._was_connected = False
         self._connect_btn.setEnabled(False)
         self._connect_btn.setText('Disconnecting…')
         self._id_btn.setEnabled(False)
@@ -361,6 +394,7 @@ class VpnView(QWidget):
         self._connect_btn.setEnabled(True)
         self._style_connect(False)
         self._stealth_lbl.setVisible(False)
+        self._ks_status_lbl.setVisible(False)
 
         # Clear Tor IPs and stats
         self._tor_v4_lbl.setText('—')
@@ -505,6 +539,10 @@ class VpnView(QWidget):
 
     def _update_stats(self):
         if not self._mgr.is_connected():
+            if self._was_connected:
+                self._was_connected = False
+                if self._mgr.had_unexpected_drop():
+                    self._on_unexpected_drop()
             return
         s = self._mgr.get_stats()
         self._dur_lbl.setText(self._mgr.fmt_duration(s.duration_s))
@@ -514,6 +552,89 @@ class VpnView(QWidget):
         # Refresh circuit display every ~30 s
         if int(s.duration_s) % 30 == 0 and int(s.duration_s) > 0:
             self._update_circuit()
+
+    # ── kill switch ───────────────────────────────────────────────────────────
+
+    def _on_ks_toggle(self, state: int):
+        enabled = (state == Qt.Checked)
+        self._mgr.set_kill_switch(enabled)
+        if not enabled and self._mgr.is_ks_active():
+            self._mgr.ks_deactivate()
+            self._ks_status_lbl.setVisible(False)
+            if not self._mgr.is_connected():
+                self._status_lbl.setText('● DISCONNECTED')
+                self._status_lbl.setStyleSheet('color: #ff4444;')
+                self._connect_btn.setText('Connect')
+                self._style_connect(False)
+
+    def _on_unexpected_drop(self):
+        """Called from the UI tick when the monitor detects Tor died."""
+        self._id_btn.setEnabled(False)
+        self._style_connect(False)
+        self._stealth_lbl.setVisible(False)
+
+        for lbl in (self._dur_lbl, self._sent_lbl, self._recv_lbl, self._total_lbl):
+            lbl.setText('—')
+        for lbl in self._hop_labels:
+            lbl.setText('—')
+        self._tor_v4_lbl.setText('—')
+        self._tor_v6_lbl.setText('—')
+
+        ks_on      = self._ks_chk.isChecked()
+        ks_active  = self._mgr.is_ks_active()
+
+        self._connect_btn.setText('Reconnect')
+        self._connect_btn.setEnabled(True)
+
+        if ks_active:
+            self._status_lbl.setText('● KILL SWITCH ACTIVE — All traffic blocked')
+            self._status_lbl.setStyleSheet('color: #ff4444; font-weight: bold;')
+            self._ks_status_lbl.setVisible(True)
+            msg = (
+                'ST-VPN dropped unexpectedly.\n\n'
+                'Kill Switch is ACTIVE — all internet traffic is blocked '
+                'to protect your real IP from leaking.\n\n'
+                'Click  Reconnect  to restore VPN protection, or uncheck '
+                'Kill Switch to allow normal traffic.'
+            )
+            mw = self.window()
+            if hasattr(mw, '_notify'):
+                mw._notify(
+                    'ST-VPN — Kill Switch Active!',
+                    'VPN dropped. ALL traffic is now BLOCKED.',
+                    QSystemTrayIcon.Critical, 10000,
+                )
+            QMessageBox.warning(self, 'ST-VPN — Kill Switch Active', msg)
+        elif ks_on:
+            # Kill switch was checked but firewall rule failed (likely no admin rights)
+            self._status_lbl.setText('● CONNECTION LOST  —  Kill switch needs admin rights')
+            self._status_lbl.setStyleSheet('color: #ff4444;')
+            msg = (
+                'ST-VPN dropped unexpectedly.\n\n'
+                'Kill switch could not activate — administrator privileges are '
+                'required to add Windows Firewall rules.\n\n'
+                'Your real IP may be exposed. Click Reconnect to restore protection.'
+            )
+            mw = self.window()
+            if hasattr(mw, '_notify'):
+                mw._notify(
+                    'ST-VPN — Connection Lost',
+                    'VPN dropped. Kill switch failed — run as administrator.',
+                    QSystemTrayIcon.Critical, 10000,
+                )
+            QMessageBox.warning(self, 'ST-VPN — Connection Lost', msg)
+        else:
+            self._status_lbl.setText('● CONNECTION LOST')
+            self._status_lbl.setStyleSheet('color: #ff4444;')
+            mw = self.window()
+            if hasattr(mw, '_notify'):
+                mw._notify(
+                    'ST-VPN — Connection Lost',
+                    'VPN dropped unexpectedly. Click Reconnect.',
+                    QSystemTrayIcon.Warning, 7000,
+                )
+
+        QTimer.singleShot(1500, self._fetch_ip)
 
     # ── style helpers ─────────────────────────────────────────────────────────
 
@@ -532,6 +653,11 @@ class VpnView(QWidget):
                 'QPushButton:hover{background:#236b23;}'
                 'QPushButton:disabled{background:#1a1a1a;color:#555;border-color:#333;}'
             )
+
+    def request_auto_connect(self) -> None:
+        """Called by main window when auto_vpn_startup setting is on."""
+        if self._mgr.is_tor_available() and not self._mgr.is_connected():
+            self._do_connect()
 
     # ── cleanup ───────────────────────────────────────────────────────────────
 

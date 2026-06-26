@@ -1108,12 +1108,19 @@ class GUIView(QWidget):
             "Run automatic virus scan every hour and notify when complete"
         )
         self.chk_hourly_scan.setChecked(
-            self.manager.settings.get('hourly_scan', False)
+            self.manager.settings.get('hourly_scan', True)
+        )
+
+        self.chk_auto_vpn = QCheckBox(
+            "Auto-connect VPN (Tor) when ST-SoftwareTool starts"
+        )
+        self.chk_auto_vpn.setChecked(
+            self.manager.settings.get('auto_vpn_startup', False)
         )
 
         for chk in (self.chk_run_background, self.chk_start_windows,
                     self.chk_auto_block, self.chk_privacy_monitor,
-                    self.chk_hourly_scan):
+                    self.chk_hourly_scan, self.chk_auto_vpn):
             pl.addWidget(chk)
 
         layout.addWidget(prot_box)
@@ -1359,6 +1366,7 @@ class GUIView(QWidget):
         self.manager.settings['auto_block_threats'] = self.chk_auto_block.isChecked()
         self.manager.settings['monitor_privacy']    = self.chk_privacy_monitor.isChecked()
         self.manager.settings['hourly_scan']        = self.chk_hourly_scan.isChecked()
+        self.manager.settings['auto_vpn_startup']   = self.chk_auto_vpn.isChecked()
         want_startup = self.chk_start_windows.isChecked()
         self.manager.settings['start_with_windows'] = want_startup
         self._set_startup_registry(want_startup)
