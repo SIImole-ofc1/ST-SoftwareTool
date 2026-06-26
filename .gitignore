@@ -22,6 +22,9 @@ core/tor_data/
 .vscode/
 .idea/
 
-# PyInstaller + Inno Setup build output — never commit these
+# Build outputs — never commit these
 build/
 dist/
+dist_nuitka/
+dist_nuitka_pm/
+obf_dist/
