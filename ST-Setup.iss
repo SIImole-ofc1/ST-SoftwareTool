@@ -64,9 +64,11 @@ Source: "dist\ST\*"; \
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; \
-    Filename: "{app}\{#AppExeName}"
+    Filename: "{app}\{#AppExeName}"; \
+    IconFilename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; \
     Filename: "{app}\{#AppExeName}"; \
+    IconFilename: "{app}\{#AppExeName}"; \
     Tasks: desktopicon
 
 [Registry]
@@ -80,10 +82,10 @@ Root: HKCU; \
     Tasks: startuprun
 
 [Run]
-; Offer to launch the app on the final installer page
+; shellexec triggers UAC properly for apps with requireAdministrator manifest
 Filename: "{app}\{#AppExeName}"; \
     Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; \
-    Flags: nowait postinstall skipifsilent
+    Flags: nowait postinstall skipifsilent shellexec
 
 [UninstallDelete]
 ; Remove the user-data folder created in %APPDATA% on uninstall
