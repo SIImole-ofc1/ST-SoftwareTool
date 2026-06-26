@@ -247,6 +247,7 @@ class TorVpnManager:
                 text=True,
                 encoding='utf-8',
                 errors='replace',
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
         except OSError as exc:
             return False, f'Could not launch Tor:\n{exc}'
