@@ -44,6 +44,9 @@ STEALTH_NONE      = 'none'
 STEALTH_OBFS4     = 'obfs4'
 STEALTH_SNOWFLAKE = 'snowflake'
 
+# Kill switch Windows Firewall rule name
+_KS_RULE = 'ST-VPN-KillSwitch'
+
 # Built-in obfs4 bridges — same defaults embedded in Tor Browser.
 # Traffic is transformed into random-looking bytes; DPI cannot identify it as Tor.
 _OBFS4_BRIDGES = [
@@ -137,6 +140,10 @@ class TorVpnManager:
         self._lock         = threading.Lock()
         self._stealth_mode = STEALTH_NONE
         self._obfs4_bridges: List[str] = []   # user-supplied obfs4 bridge lines
+        self._kill_switch_on  = False
+        self._ks_active       = False
+        self._unexpected_drop = False
+        self._monitor_stop    = threading.Event()
 
     # ── public: tor location ──────────────────────────────────────────────────
 
@@ -217,6 +224,8 @@ class TorVpnManager:
         Start Tor, wait for full bootstrap, then configure the Windows system
         proxy so all traffic from proxy-aware applications goes through Tor.
         """
+        self._ks_force_cleanup()  # remove any stale rule from a previous crash/session
+
         tor = self.find_tor()
         if not tor:
             return False, (
@@ -271,6 +280,9 @@ class TorVpnManager:
         # Fetch circuit info in background (doesn't block connect)
         threading.Thread(target=self._refresh_circuit, daemon=True).start()
 
+        # Watch Tor process — fires kill switch if it dies unexpectedly
+        self._start_process_monitor()
+
         if progress_cb:
             progress_cb(100, 'Connected — traffic is now routed through Tor')
 
@@ -279,6 +291,8 @@ class TorVpnManager:
     # ── public: disconnect ────────────────────────────────────────────────────
 
     def disconnect(self) -> Tuple[bool, str]:
+        self._stop_process_monitor()
+        self._ks_deactivate()
         self._set_proxy(False)
         self._close_control()
         self._kill_tor()
@@ -336,6 +350,24 @@ class TorVpnManager:
             threading.Thread(target=self._refresh_circuit, daemon=True).start()
             return True, 'Rate limit — new circuit will activate in a moment'
         return False, f'Control error: {resp.strip()}'
+
+    def set_kill_switch(self, enabled: bool) -> None:
+        self._kill_switch_on = enabled
+        if not enabled:
+            self._ks_deactivate()
+
+    def is_ks_active(self) -> bool:
+        return self._ks_active
+
+    def had_unexpected_drop(self) -> bool:
+        """Return True (once) if the connection was lost unexpectedly."""
+        if self._unexpected_drop:
+            self._unexpected_drop = False
+            return True
+        return False
+
+    def ks_deactivate(self) -> None:
+        self._ks_deactivate()
 
     def get_circuit(self) -> List[Hop]:
         with self._lock:
@@ -669,6 +701,64 @@ class TorVpnManager:
             break   # use first BUILT circuit only
 
         return hops
+
+    # ── internal: kill switch / process monitor ───────────────────────────────
+
+    def _start_process_monitor(self):
+        self._monitor_stop.clear()
+        threading.Thread(target=self._monitor_loop, daemon=True).start()
+
+    def _stop_process_monitor(self):
+        self._monitor_stop.set()
+
+    def _monitor_loop(self):
+        """Poll Tor process every 2 s; fire kill switch if it dies unexpectedly."""
+        while not self._monitor_stop.wait(2):
+            with self._lock:
+                if not self._connected:
+                    return
+            proc = self._proc
+            if proc is not None and proc.poll() is not None:
+                if self._kill_switch_on:
+                    self._ks_activate()
+                with self._lock:
+                    self._connected = False
+                    self._circuit   = []
+                self._set_proxy(False)
+                self._unexpected_drop = True
+                return
+
+    def _ks_activate(self) -> bool:
+        """Add a Windows Firewall rule that blocks ALL outbound traffic."""
+        try:
+            r = subprocess.run(
+                ['netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                 f'name={_KS_RULE}', 'dir=out', 'action=block',
+                 'enable=yes', 'profile=any'],
+                capture_output=True, timeout=8,
+            )
+            self._ks_active = (r.returncode == 0)
+        except Exception:
+            self._ks_active = False
+        return self._ks_active
+
+    def _ks_deactivate(self) -> None:
+        """Remove the kill switch firewall rule."""
+        if not self._ks_active:
+            return
+        self._ks_force_cleanup()
+
+    def _ks_force_cleanup(self) -> None:
+        """Delete the firewall rule unconditionally (handles stale rules from crashes)."""
+        try:
+            subprocess.run(
+                ['netsh', 'advfirewall', 'firewall', 'delete', 'rule',
+                 f'name={_KS_RULE}'],
+                capture_output=True, timeout=8,
+            )
+        except Exception:
+            pass
+        self._ks_active = False
 
     # ── internal: proxy / process / network ───────────────────────────────────
 

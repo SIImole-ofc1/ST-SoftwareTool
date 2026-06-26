@@ -2,7 +2,7 @@ import os
 from PySide6.QtWidgets import (
     QMainWindow, QStackedWidget, QMessageBox,
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialogButtonBox,
-    QSystemTrayIcon, QMenu,
+    QSystemTrayIcon, QMenu, QApplication,
 )
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap
 from PySide6.QtCore import Qt, QTimer
@@ -53,8 +53,12 @@ class MainWindow(QMainWindow):
         self._scanner.set_auto_block(
             self.manager.settings.get('auto_block_threats', True)
         )
-        if self.manager.settings.get('hourly_scan', False):
+        if self.manager.settings.get('hourly_scan', True):
             self._scanner.start()
+
+        # VPN auto-connect (delayed so the window has time to finish painting)
+        if manager.settings.get('auto_vpn_startup', False):
+            QTimer.singleShot(2500, self._auto_vpn_connect)
 
         if manager.settings.get("default_view", "terminal") == "gui":
             self._go_gui()
@@ -130,6 +134,12 @@ class MainWindow(QMainWindow):
 
     # ── background scanner callbacks ──────────────────────────────────────────
 
+    def _auto_vpn_connect(self):
+        try:
+            self.gui._vpn_view.request_auto_connect()
+        except Exception:
+            pass
+
     def _on_auto_scan_started(self):
         self._notify(
             "ST AntiVirus",
@@ -140,8 +150,8 @@ class MainWindow(QMainWindow):
     def _on_auto_scan_done(self, total: int, blocked: int):
         if total == 0:
             self._notify(
-                "ST AntiVirus  —  Scan Complete",
-                "Hourly scan finished. No threats found. Your system is clean.",
+                "ST AntiVirus  —  All Clear",
+                "Hourly scan finished.  No threats found.  Your system is clean.",
                 QSystemTrayIcon.Information, 6000,
             )
         elif blocked > 0:
@@ -151,12 +161,27 @@ class MainWindow(QMainWindow):
                 f"{blocked} critical threat(s) were automatically blocked.",
                 QSystemTrayIcon.Critical, 8000,
             )
+            QMessageBox.warning(
+                self,
+                "ST AntiVirus — Threats Blocked",
+                f"Hourly scan complete.\n\n"
+                f"{total} threat(s) were detected.\n"
+                f"{blocked} critical threat(s) were automatically blocked.\n\n"
+                f"Open the AntiVirus tab to review all findings.",
+            )
         else:
             self._notify(
                 "ST AntiVirus  —  Threats Detected",
                 f"Scan complete: {total} threat(s) found.\n"
                 f"Open ST AntiVirus to review and block them.",
                 QSystemTrayIcon.Warning, 8000,
+            )
+            QMessageBox.warning(
+                self,
+                "ST AntiVirus — Threats Detected",
+                f"Hourly scan complete.\n\n"
+                f"{total} threat(s) were detected on your system.\n\n"
+                f"Open the AntiVirus tab to review and block them.",
             )
 
     def _on_auto_blocked(self, threat):
