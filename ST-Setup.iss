@@ -1,4 +1,4 @@
-; ST-Setup.iss — Inno Setup 6 installer script for ST-SoftwareTool
+﻿; ST-Setup.iss â€” Inno Setup 6 installer script for ST-SoftwareTool
 ;
 ; Prerequisites:
 ;   1. Run:  pyinstaller ST.spec
@@ -8,7 +8,7 @@
 ;      Output: dist\installer\ST-Setup-1.0.0.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.3"
+#define AppVersion   "1.0.4"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
