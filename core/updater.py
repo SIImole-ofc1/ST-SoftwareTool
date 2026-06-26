@@ -9,7 +9,7 @@ import urllib.request
 
 from PySide6.QtWidgets import QMessageBox
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
 
 

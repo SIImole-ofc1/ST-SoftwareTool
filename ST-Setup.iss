@@ -8,7 +8,7 @@
 ;      Output: dist\installer\ST-Setup-1.0.0.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.2"
+#define AppVersion   "1.0.3"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
@@ -26,7 +26,7 @@ DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
 ; Installer output goes to dist\installer\  (created automatically)
 OutputDir=dist\installer
-OutputBaseFilename=ST-Setup-{#AppVersion}
+OutputBaseFilename=ST-SoftwareTool-Setup
 SetupIconFile=assets\STsoftwareterminalLOGO.ico
 ; Logo shown on the left panel (Welcome/Finish pages) and top-right thumbnail
 WizardImageFile=assets\STsoftwareterminalLOGO.png.png
