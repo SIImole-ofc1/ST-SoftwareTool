@@ -2,19 +2,24 @@
 
 The caller is responsible for running refresh() from a non-main thread
 (e.g. a QThread) so the UI stays responsive during the process scan.
-psutil Windows API calls release the GIL, so this is safe.
+
+CPU measurement: persistent psutil.Process objects are kept per PID so that
+cpu_percent(interval=None) always returns the fraction since the PREVIOUS call
+on that SAME object.  Never re-seed by replacing the stored object.
 """
-import os, sys, subprocess
+import os, subprocess
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 try:
     import psutil
-    _cpu_count = psutil.cpu_count(logical=True) or 1
-    _PSUTIL_OK = True
+    _cpu_count    = psutil.cpu_count(logical=True) or 1
+    _total_ram_mb = (psutil.virtual_memory().total / 1_048_576) or 1.0
+    _PSUTIL_OK    = True
 except ImportError:
-    _PSUTIL_OK = False
-    _cpu_count = 1
+    _PSUTIL_OK    = False
+    _cpu_count    = 1
+    _total_ram_mb = 1.0
 
 
 # ── data classes ─────────────────────────────────────────────────────────────
@@ -62,13 +67,16 @@ class HistoryEntry:
 
 class TaskManagerBackend:
     _MAX_HISTORY = 300
-    _ATTRS = ['pid', 'name', 'status', 'create_time', 'memory_info', 'memory_percent']
+    # Only fetch fields that require syscalls; memory_percent computed locally
+    _ATTRS = ['pid', 'name', 'status', 'create_time', 'memory_info']
 
     def __init__(self):
-        self._seen:    Dict[int, Tuple[str, float]] = {}
-        self._history: List[HistoryEntry]           = []
-        self._cache:   Dict[int, object]            = {}  # pid → psutil.Process
-        self.available = _PSUTIL_OK
+        self._seen:      Dict[int, Tuple[str, float]] = {}
+        self._history:   List[HistoryEntry]           = []
+        # Persistent psutil.Process objects: cpu_percent() is measured against
+        # the PREVIOUS call on the SAME object.  Must NOT replace on each refresh.
+        self._cpu_procs: Dict[int, object]            = {}
+        self.available   = _PSUTIL_OK
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -105,25 +113,28 @@ class TaskManagerBackend:
                     except (OSError, OverflowError, ValueError):
                         pass
 
-                # CPU percent: seed on first encounter, measure on subsequent
-                if pid not in self._cache:
-                    self._cache[pid] = proc
+                # CPU: use a PERSISTENT Process object per PID so successive
+                # cpu_percent(interval=None) calls measure over the refresh interval.
+                cpu_obj = self._cpu_procs.get(pid)
+                if cpu_obj is None:
                     try:
-                        proc.cpu_percent(interval=None)
+                        cpu_obj = psutil.Process(pid)
+                        cpu_obj.cpu_percent(interval=None)   # seed (returns 0)
+                        self._cpu_procs[pid] = cpu_obj
                     except Exception:
                         pass
                     cpu_pct = 0.0
                 else:
                     try:
-                        raw = self._cache[pid].cpu_percent(interval=None) or 0.0
+                        raw     = cpu_obj.cpu_percent(interval=None) or 0.0
                         cpu_pct = round(min(raw / _cpu_count, 100.0), 1)
                     except Exception:
+                        self._cpu_procs.pop(pid, None)
                         cpu_pct = 0.0
-                    self._cache[pid] = proc
 
                 mem     = info.get('memory_info')
                 ram_mb  = round(mem.rss / 1_048_576, 1) if mem else 0.0
-                ram_pct = round(float(info.get('memory_percent') or 0.0), 1)
+                ram_pct = round(ram_mb / _total_ram_mb * 100.0, 1)
 
                 if pid not in self._seen:
                     self._seen[pid] = (name, started_ts)
@@ -148,11 +159,7 @@ class TaskManagerBackend:
                 closed=datetime.fromtimestamp(now_ts).strftime('%H:%M:%S'),
                 duration=self._fmt_duration(sts, now_ts),
             ))
-
-        # Prune stale cache entries
-        for pid in list(self._cache):
-            if pid not in current_pids:
-                del self._cache[pid]
+            self._cpu_procs.pop(pid, None)
 
         if len(self._history) > self._MAX_HISTORY:
             self._history = self._history[-self._MAX_HISTORY:]
@@ -179,7 +186,7 @@ class TaskManagerBackend:
             return False, str(exc)
 
     def cleanup(self) -> None:
-        self._cache.clear()
+        self._cpu_procs.clear()
 
     # ── helpers ───────────────────────────────────────────────────────────────
 

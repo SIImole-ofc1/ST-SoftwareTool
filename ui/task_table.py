@@ -1,10 +1,8 @@
 """
 Lightweight MVC table models for the Task Manager tab.
 
-Using QAbstractTableModel + QTableView instead of QTreeWidget means Qt
-only calls data() for the ~20 rows that are visible on screen — no Python
-objects are created for the 280+ hidden rows, so tab-switch and live
-updates are essentially instantaneous.
+Using QAbstractTableModel + QTableView means Qt only calls data() for the
+~20 rows visible on screen — no Python objects are created for hidden rows.
 """
 from PySide6.QtCore import (
     QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt,
@@ -12,6 +10,11 @@ from PySide6.QtCore import (
 from typing import List, Optional
 
 from core.task_manager import ProcessInfo, HistoryEntry
+
+# Minimum change required before a row is marked dirty and repainted.
+# Avoids constant flicker for idle processes whose values drift by <0.1%.
+_CPU_THRESHOLD = 0.2    # CPU %
+_RAM_THRESHOLD = 0.5    # RAM MB
 
 
 # ── Process table ─────────────────────────────────────────────────────────────
@@ -66,11 +69,13 @@ class ProcessTableModel(QAbstractTableModel):
     # ── data update ───────────────────────────────────────────────────────────
 
     def set_procs(self, new_procs: List[ProcessInfo]) -> None:
-        """Incremental update: remove gone, update changed, append new.
+        """Incremental update — preserves scroll position and selection.
 
-        Preserves scroll position and selection — no full model reset.
+        Only emits dataChanged for rows whose values crossed the change
+        threshold, avoiding constant full-table repaints for idle processes.
         """
         new_by_pid = {p.pid: p for p in new_procs}
+        _roles     = [Qt.DisplayRole, Qt.UserRole]
 
         # ── 1. Remove gone processes (high → low so indices stay valid) ──────
         gone_rows = sorted(
@@ -82,25 +87,19 @@ class ProcessTableModel(QAbstractTableModel):
             self._procs.pop(row)
             self.endRemoveRows()
 
-        # ── 2. Update surviving processes in-place ────────────────────────────
-        lo = hi = -1
+        # ── 2. Update surviving rows — one signal per changed row ─────────────
         for i, p in enumerate(self._procs):
             np = new_by_pid.get(p.pid)
             if np is None:
                 continue
-            if (p.cpu_percent != np.cpu_percent
-                    or p.ram_mb     != np.ram_mb
+            if (abs(p.cpu_percent - np.cpu_percent) > _CPU_THRESHOLD
+                    or abs(p.ram_mb - np.ram_mb) > _RAM_THRESHOLD
                     or p.ram_percent != np.ram_percent
-                    or p.status     != np.status):
+                    or p.status != np.status):
                 self._procs[i] = np
-                lo = i if lo == -1 else lo
-                hi = i
-        if lo != -1:
-            self.dataChanged.emit(
-                self.index(lo, 0),
-                self.index(hi, len(self.HEADERS) - 1),
-                [Qt.DisplayRole, Qt.UserRole],
-            )
+                top_left     = self.index(i, 0)
+                bottom_right = self.index(i, len(self.HEADERS) - 1)
+                self.dataChanged.emit(top_left, bottom_right, _roles)
 
         # ── 3. Append brand-new processes ─────────────────────────────────────
         existing = {p.pid for p in self._procs}
@@ -146,6 +145,8 @@ class HistoryTableModel(QAbstractTableModel):
         return None
 
     def set_entries(self, entries: List[HistoryEntry]) -> None:
+        if len(entries) == len(self._entries):
+            return   # nothing closed since last refresh — skip reset
         self.beginResetModel()
         self._entries = entries
         self.endResetModel()
