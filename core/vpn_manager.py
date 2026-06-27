@@ -530,13 +530,13 @@ class TorVpnManager:
             f'ControlPort {CONTROL_PORT}',
             f'HTTPTunnelPort {HTTP_TUNNEL}',
             'CookieAuthentication 1',
-            f'DataDirectory {_DATA_DIR}',
+            f'DataDirectory "{_DATA_DIR}"',
             'Log notice stdout',
         ]
         if geoip4:
-            lines.append(f'GeoIPFile {geoip4}')
+            lines.append(f'GeoIPFile "{geoip4}"')
         if geoip6:
-            lines.append(f'GeoIPv6File {geoip6}')
+            lines.append(f'GeoIPv6File "{geoip6}"')
 
         # ── Stealth / pluggable transports ────────────────────────────────────
         if self._stealth_mode == STEALTH_OBFS4:
@@ -658,11 +658,12 @@ class TorVpnManager:
     def _ctrl_cmd(self, cmd: str) -> str:
         if not self._ctrl:
             return ''
-        try:
-            self._ctrl.sendall(f'{cmd}\r\n'.encode())
-            return _recv_ctrl(self._ctrl)
-        except OSError:
-            return ''
+        with self._lock:
+            try:
+                self._ctrl.sendall(f'{cmd}\r\n'.encode())
+                return _recv_ctrl(self._ctrl)
+            except OSError:
+                return ''
 
     # ── internal: circuit parsing ─────────────────────────────────────────────
 

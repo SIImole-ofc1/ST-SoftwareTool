@@ -1,14 +1,14 @@
-﻿; ST-Setup.iss Ã¢â‚¬â€ Inno Setup 6 installer script for ST-SoftwareTool
+; ST-Setup.iss — Inno Setup 6 installer script for ST-SoftwareTool
 ;
 ; Prerequisites:
-;   1. Run:  pyinstaller ST.spec
-;      This produces the dist\ST\ folder that this script packages.
+;   1. Run:  python -m nuitka ... main.py   (see release.ps1)
+;      This produces dist_nuitka\main.dist\ that this script packages.
 ;   2. Download and install Inno Setup 6 from https://jrsoftware.org/isinfo.php
-;   3. Open this file in Inno Setup Compiler and click Build > Compile
-;      Output: dist\installer\ST-Setup-1.0.0.exe
+;   3. Run:  .\release.ps1 1.0.9
+;      Output: dist_nuitka\installer\ST-SoftwareTool-Setup.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.8"
+#define AppVersion   "1.0.9"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
@@ -24,7 +24,10 @@ AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
 DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
-; Installer output goes to dist\installer\  (created automatically)
+; Close the running app before installing (allows overwrite of locked files)
+CloseApplications=yes
+RestartApplications=no
+; Installer output goes to dist_nuitka\installer\  (created automatically)
 OutputDir=dist_nuitka\installer
 OutputBaseFilename=ST-SoftwareTool-Setup
 SetupIconFile=assets\STsoftwareterminalLOGO.ico
@@ -40,8 +43,6 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
-; Show a "Launch ST-SoftwareTool" checkbox on the final page
-; (handled in [Run] section below)
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -55,6 +56,10 @@ Name: "startuprun"; \
     Description: "Launch ST-SoftwareTool automatically with Windows"; \
     GroupDescription: "Startup options:"; \
     Flags: unchecked
+
+[InstallDelete]
+; Wipe the previous install before copying new files (ensures clean upgrade)
+Type: filesandordirs; Name: "{app}"
 
 [Files]
 ; Bundle the folder produced by Nuitka
@@ -88,6 +93,6 @@ Filename: "{app}\{#AppExeName}"; \
     Flags: nowait postinstall skipifsilent shellexec
 
 [UninstallDelete]
-; Remove the user-data folder created in %APPDATA% on uninstall
-Type: filesandordirs; \
-    Name: "{userappdata}\{#AppName}"
+; Remove installed app files and user-data folder on uninstall
+Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{userappdata}\{#AppName}"

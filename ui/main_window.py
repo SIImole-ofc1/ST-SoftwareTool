@@ -197,7 +197,7 @@ class MainWindow(QMainWindow):
         s = self.manager.settings
         self._privacy.set_enabled(s.get('monitor_privacy', True))
         self._scanner.set_auto_block(s.get('auto_block_threats', True))
-        if s.get('hourly_scan', False):
+        if s.get('hourly_scan', True):
             self._scanner.start()
         else:
             self._scanner.stop()

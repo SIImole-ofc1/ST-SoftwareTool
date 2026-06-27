@@ -1,28 +1,20 @@
-"""Task Manager backend.
+"""Task Manager backend — uses psutil directly in the calling thread.
 
-psutil runs in a dedicated subprocess (proc_monitor.py) so that process
-scanning never holds the GIL in the main process — the UI thread stays
-completely responsive at all times.
-
-Flow:
-  _TaskWorker (QThread) ──write──► proc_monitor subprocess
-                        ◄─readline── JSON process list
-  readline() releases the GIL while waiting, so the UI thread is free
-  during the entire subprocess scan (~50-150 ms per refresh on Windows).
+The caller is responsible for running refresh() from a non-main thread
+(e.g. a QThread) so the UI stays responsive during the process scan.
+psutil Windows API calls release the GIL, so this is safe.
 """
-import os, sys, json, subprocess
+import os, sys, subprocess
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-def _log(msg: str) -> None:
-    try:
-        d = Path(os.environ.get('APPDATA', '')) / 'ST-SoftwareTool'
-        d.mkdir(parents=True, exist_ok=True)
-        with open(d / 'tm_debug.log', 'a') as f:
-            f.write(f"{datetime.now()}: {msg}\n")
-    except Exception:
-        pass
+try:
+    import psutil
+    _cpu_count = psutil.cpu_count(logical=True) or 1
+    _PSUTIL_OK = True
+except ImportError:
+    _PSUTIL_OK = False
+    _cpu_count = 1
 
 
 # ── data classes ─────────────────────────────────────────────────────────────
@@ -40,8 +32,8 @@ class ProcessInfo:
         self.ram_mb         = ram_mb
         self.ram_percent    = ram_percent
         self.status         = status
-        self.create_time    = create_time      # 'HH:MM:SS' string or None
-        self.create_time_ts = create_time_ts   # epoch float for sorting
+        self.create_time    = create_time
+        self.create_time_ts = create_time_ts
 
     @property
     def started_str(self) -> str:
@@ -70,86 +62,84 @@ class HistoryEntry:
 
 class TaskManagerBackend:
     _MAX_HISTORY = 300
+    _ATTRS = ['pid', 'name', 'status', 'create_time', 'memory_info', 'memory_percent']
 
     def __init__(self):
-        self._proc:    Optional[subprocess.Popen]    = None
-        self._seen:    Dict[int, Tuple[str, float]]  = {}   # pid → (name, started_ts)
-        self._history: List[HistoryEntry]             = []
-        self.available = False
-        self._start_subprocess()
-
-    def _start_subprocess(self) -> None:
-        if getattr(sys, 'frozen', False):
-            # Running as a frozen .exe — proc_monitor is a separate bundled executable
-            monitor = os.path.join(os.path.dirname(sys.executable), 'proc_monitor.exe')
-            cmd = [monitor]
-        else:
-            monitor = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'proc_monitor.py')
-            cmd = [sys.executable, monitor]
-
-        if not os.path.exists(monitor):
-            _log(f"proc_monitor not found: {monitor}")
-            return
-        flags = subprocess.CREATE_NO_WINDOW if getattr(sys, 'frozen', False) else 0
-        try:
-            self._proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                bufsize=1,
-                creationflags=flags,
-            )
-            self.available = True
-            _log(f"proc_monitor started OK: {cmd}")
-        except Exception as exc:
-            _log(f"proc_monitor Popen FAILED: {exc} | cmd={cmd} | flags={flags}")
-            self._proc = None
+        self._seen:    Dict[int, Tuple[str, float]] = {}
+        self._history: List[HistoryEntry]           = []
+        self._cache:   Dict[int, object]            = {}  # pid → psutil.Process
+        self.available = _PSUTIL_OK
 
     # ── public API ────────────────────────────────────────────────────────────
 
     def refresh(self) -> List[ProcessInfo]:
-        if not self.available or not self._proc:
+        if not self.available:
             return []
 
-        try:
-            self._proc.stdin.write('refresh\n')
-            self._proc.stdin.flush()
-            raw = self._proc.stdout.readline()   # GIL released here while subprocess scans
-            if not raw:
-                _log("proc_monitor stdout EOF — process crashed after start")
-                self.available = False
-                return []
-            data = json.loads(raw)
-            if isinstance(data, dict):           # error payload from subprocess
-                return []
-        except Exception:
-            return []
-
-        current_pids: set        = set()
+        current_pids: set          = set()
         results: List[ProcessInfo] = []
         now_ts = datetime.now().timestamp()
 
-        for row in data:
-            pid = row.get('pid')
-            if pid is None:
-                continue
-            current_pids.add(pid)
-            name       = row.get('name', f'[{pid}]')
-            started_ts = float(row.get('started_ts') or 0.0)
-            if pid not in self._seen:
-                self._seen[pid] = (name, started_ts)
-            results.append(ProcessInfo(
-                pid=pid, name=name,
-                cpu_percent=row.get('cpu', 0.0),
-                ram_mb=row.get('ram_mb', 0.0),
-                ram_percent=row.get('ram_pct', 0.0),
-                status=row.get('status', 'unknown'),
-                create_time=row.get('started'),
-                create_time_ts=started_ts,
-            ))
+        try:
+            proc_iter = psutil.process_iter(self._ATTRS)
+        except Exception:
+            return []
 
+        for proc in proc_iter:
+            try:
+                info = proc.info
+                pid  = info.get('pid')
+                if pid is None:
+                    continue
+                current_pids.add(pid)
+
+                name = (info.get('name') or '').strip() or f'[{pid}]'
+
+                started_str = None
+                started_ts  = 0.0
+                raw_ct = info.get('create_time')
+                if raw_ct:
+                    try:
+                        started_str = datetime.fromtimestamp(raw_ct).strftime('%H:%M:%S')
+                        started_ts  = float(raw_ct)
+                    except (OSError, OverflowError, ValueError):
+                        pass
+
+                # CPU percent: seed on first encounter, measure on subsequent
+                if pid not in self._cache:
+                    self._cache[pid] = proc
+                    try:
+                        proc.cpu_percent(interval=None)
+                    except Exception:
+                        pass
+                    cpu_pct = 0.0
+                else:
+                    try:
+                        raw = self._cache[pid].cpu_percent(interval=None) or 0.0
+                        cpu_pct = round(min(raw / _cpu_count, 100.0), 1)
+                    except Exception:
+                        cpu_pct = 0.0
+                    self._cache[pid] = proc
+
+                mem     = info.get('memory_info')
+                ram_mb  = round(mem.rss / 1_048_576, 1) if mem else 0.0
+                ram_pct = round(float(info.get('memory_percent') or 0.0), 1)
+
+                if pid not in self._seen:
+                    self._seen[pid] = (name, started_ts)
+
+                results.append(ProcessInfo(
+                    pid=pid, name=name,
+                    cpu_percent=cpu_pct,
+                    ram_mb=ram_mb, ram_percent=ram_pct,
+                    status=info.get('status') or 'unknown',
+                    create_time=started_str,
+                    create_time_ts=started_ts,
+                ))
+            except Exception:
+                continue
+
+        # Detect processes that exited since last refresh
         gone = set(self._seen) - current_pids
         for pid in gone:
             sname, sts = self._seen.pop(pid)
@@ -158,6 +148,11 @@ class TaskManagerBackend:
                 closed=datetime.fromtimestamp(now_ts).strftime('%H:%M:%S'),
                 duration=self._fmt_duration(sts, now_ts),
             ))
+
+        # Prune stale cache entries
+        for pid in list(self._cache):
+            if pid not in current_pids:
+                del self._cache[pid]
 
         if len(self._history) > self._MAX_HISTORY:
             self._history = self._history[-self._MAX_HISTORY:]
@@ -184,17 +179,7 @@ class TaskManagerBackend:
             return False, str(exc)
 
     def cleanup(self) -> None:
-        if self._proc:
-            try:
-                self._proc.stdin.write('quit\n')
-                self._proc.stdin.flush()
-                self._proc.wait(timeout=3)
-            except Exception:
-                try:
-                    self._proc.kill()
-                except Exception:
-                    pass
-            self._proc = None
+        self._cache.clear()
 
     # ── helpers ───────────────────────────────────────────────────────────────
 

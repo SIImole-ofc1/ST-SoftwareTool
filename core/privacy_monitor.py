@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import winreg
 from typing import List
 
@@ -98,6 +99,7 @@ class PrivacyMonitor(QThread):
         self._enabled    = True
         self._cam_active = False
         self._mic_active = False
+        self._wake       = threading.Event()
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
@@ -106,7 +108,9 @@ class PrivacyMonitor(QThread):
         while not self.isInterruptionRequested():
             if self._enabled:
                 self._poll()
-            self.msleep(5000)
+            # Interruptible 5-second sleep: wakes immediately on shutdown()
+            self._wake.wait(5.0)
+            self._wake.clear()
 
     def _poll(self) -> None:
         # Camera
@@ -129,4 +133,5 @@ class PrivacyMonitor(QThread):
 
     def shutdown(self) -> None:
         self.requestInterruption()
-        self.wait(2000)
+        self._wake.set()   # wake the thread so it exits without waiting 5 s
+        self.wait(3000)

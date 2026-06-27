@@ -42,14 +42,20 @@ def close_app(name: str) -> Tuple[bool, str]:
         for h in hwnds:
             _u32.PostMessageW(h, WM_CLOSE, 0, 0)
         return True, f"Sent close to {len(hwnds)} window(s) matching '{name}'."
-    # Fallback: taskkill by image name
+    # Fallback: kill by process name using psutil (supports partial matching)
     try:
-        r = subprocess.run(
-            ["taskkill", "/F", "/FI", f"IMAGENAME eq *{name}*"],
-            capture_output=True, text=True,
-        )
-        if "SUCCESS" in r.stdout:
-            return True, f"Killed process matching '{name}'."
+        import psutil
+        name_lower = name.lower()
+        killed = 0
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                if name_lower in (proc.info.get('name') or '').lower():
+                    proc.kill()
+                    killed += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        if killed:
+            return True, f"Killed {killed} process(es) matching '{name}'."
     except Exception:
         pass
     return False, f"No window or process found matching '{name}'."
