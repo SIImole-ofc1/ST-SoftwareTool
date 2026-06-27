@@ -196,22 +196,38 @@ class AntivirusManager:
         """Quick scan + full drive walk (PE analysis in user dirs only)."""
         self._stop = False
         threats: List[ThreatEntry] = []
+        # Quick scan covers %TEMP%, %APPDATA%, ~/Downloads, processes, registry, etc.
         threats.extend(self.quick_scan(progress_cb, threat_cb))
+        # Avoid re-scanning directories already covered by quick_scan
+        _already_scanned = {
+            os.path.expandvars('%TEMP%').lower().rstrip('\\'),
+            os.path.expandvars('%TMP%').lower().rstrip('\\'),
+            os.path.expandvars('%APPDATA%').lower().rstrip('\\'),
+            os.path.join(os.path.expandvars('%LOCALAPPDATA%'), 'Temp').lower(),
+            os.path.expanduser('~/Downloads').lower().rstrip('\\').rstrip('/'),
+        }
+        _seen_threat_paths = {t.path.lower() for t in threats if t.path}
         for drive in self._fixed_drives():
             if self._stop: break
             self._emit(progress_cb, f'Full scan — drive {drive}')
             self._scan_dir(drive, quick=False, do_pe=True,
-                           threats=threats, progress_cb=progress_cb, threat_cb=threat_cb)
+                           threats=threats, progress_cb=progress_cb, threat_cb=threat_cb,
+                           skip_roots=_already_scanned, seen_paths=_seen_threat_paths)
         return threats
 
     # ── directory walking ─────────────────────────────────────────────────────
 
     def _scan_dir(self, path: str, quick: bool, do_pe: bool,
-                  threats: list, progress_cb=None, threat_cb=None) -> None:
+                  threats: list, progress_cb=None, threat_cb=None,
+                  skip_roots: set = None, seen_paths: set = None) -> None:
         try:
             for root, dirs, files in os.walk(path):
                 if self._stop: break
-                low = root.lower()
+                low = root.lower().rstrip('\\')
+                # Skip directories already scanned (e.g. quick-scan dirs in full scan)
+                if skip_roots and low in skip_roots:
+                    dirs[:] = []
+                    continue
                 dirs[:] = [d for d in dirs
                            if not any(s in os.path.join(low, d.lower())
                                       for s in self._SKIP_DIRS)]
@@ -224,12 +240,16 @@ class AntivirusManager:
                 for fname in files:
                     if self._stop: break
                     ext = os.path.splitext(fname)[1].lower()
-                    if ext not in self._CHECK_EXTS and not quick:
+                    if ext not in self._CHECK_EXTS:
                         continue
                     fpath = os.path.join(root, fname)
+                    if seen_paths is not None and fpath.lower() in seen_paths:
+                        continue
                     for t in self._check_file(fpath, fname.lower(), ext, pe_here):
                         threats.append(t)
                         self._emit_threat(threat_cb, t)
+                        if seen_paths is not None:
+                            seen_paths.add(fpath.lower())
 
                 if quick:
                     break   # top-level only for quick scan
@@ -445,7 +465,7 @@ class AntivirusManager:
                 while True:
                     try:
                         vname, value, _ = winreg.EnumValue(key, i)
-                        vl = value.lower()
+                        vl = value.strip('"\'').lower()
                         if vl.startswith(self._temp) or vl.startswith(self._tmp):
                             out.append(ThreatEntry(
                                 severity='red', category='Startup Entry from Temp',
@@ -586,6 +606,7 @@ class AntivirusManager:
                 ['schtasks', '/query', '/fo', 'LIST', '/v'],
                 capture_output=True, text=True, timeout=20,
                 encoding='utf-8', errors='replace',
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             current = ''
             for line in result.stdout.splitlines():

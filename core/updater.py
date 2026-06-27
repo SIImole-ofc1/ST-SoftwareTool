@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -11,7 +11,7 @@ import urllib.request
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
 
 
@@ -85,7 +85,10 @@ def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> None:
     def _download():
         try:
             with urllib.request.urlopen(asset_url, timeout=180) as r:
-                total = int(r.headers.get("Content-Length", 0))
+                try:
+                    total = int(r.headers.get("Content-Length", 0) or 0)
+                except (ValueError, TypeError):
+                    total = 0
                 received = 0
                 with open(installer_path, "wb") as f:
                     while not state["cancelled"]:
@@ -115,8 +118,11 @@ def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> None:
         if state["done"]:
             progress.setValue(100)
             progress.close()
-            subprocess.Popen([installer_path])
-            sys.exit(0)
+            subprocess.Popen(
+                [installer_path, '/VERYSILENT', '/NORESTART', '/CLOSEAPPLICATIONS'],
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
+            )
+            QTimer.singleShot(800, lambda: os._exit(0))
             return
         progress.setValue(state["pct"])
         QTimer.singleShot(250, _poll)

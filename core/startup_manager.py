@@ -307,6 +307,7 @@ Get-ScheduledTask | Where-Object { $_.State -ne 'Disabled' } | ForEach-Object {
             proc = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', self._PS_TASKS],
                 capture_output=True, text=True, timeout=60,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             raw = proc.stdout.strip()
             if not raw:
@@ -512,13 +513,19 @@ Get-ScheduledTask | Where-Object { $_.State -ne 'Disabled' } | ForEach-Object {
 
     @staticmethod
     def _toggle_startup_file(entry: StartupEntry, enable: bool) -> Tuple[bool, str]:
-        orig     = entry.command
-        disabled = orig + '.disabled'
-        try:
-            if enable:
-                src, dst = disabled, orig
+        orig = entry.command
+        if enable:
+            if orig.lower().endswith('.disabled'):
+                src = orig
+                dst = orig[:-len('.disabled')]
             else:
-                src, dst = orig, disabled
+                return True, ''
+        else:
+            if orig.lower().endswith('.disabled'):
+                return True, ''
+            src = orig
+            dst = orig + '.disabled'
+        try:
             if not os.path.exists(src):
                 return False, f'File not found: {src}'
             os.rename(src, dst)

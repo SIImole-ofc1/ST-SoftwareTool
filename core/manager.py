@@ -59,10 +59,16 @@ class AppManager:
             try:
                 with open(DATA_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                self.apps = [App.from_dict(a) for a in data.get("apps", [])]
+                apps = []
+                for a in data.get("apps", []):
+                    try:
+                        apps.append(App.from_dict(a))
+                    except (KeyError, TypeError):
+                        pass
+                self.apps = apps
                 self.categories = data.get("categories", list(DEFAULT_CATEGORIES))
                 self.settings = data.get("settings", self.settings)
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, OSError):
                 pass
 
     def save(self):
@@ -146,7 +152,8 @@ class AppManager:
             return True, f"Launched '{name}'."
         except Exception:
             try:
-                subprocess.Popen([app.path])
+                subprocess.Popen([app.path],
+                                 creationflags=subprocess.CREATE_NO_WINDOW)
                 return True, f"Launched '{name}'."
             except Exception as e2:
                 return False, f"Failed to launch '{name}': {e2}"

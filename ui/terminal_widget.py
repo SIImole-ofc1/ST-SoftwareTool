@@ -293,6 +293,7 @@ class TerminalWidget(QWidget):
             theme = action.split("_", 1)[1]
             self.set_theme(theme)
             self.theme_changed.emit(theme)
+            return
 
         if result.message:
             ink = self._color("text") if result.success else self._color("error")

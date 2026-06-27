@@ -352,7 +352,7 @@ class ServicesView(QWidget):
         for w in (self._load_worker, self._action_worker):
             if w and w.isRunning():
                 w.requestInterruption()
-                w.wait(2000)
+                w.wait(65000)
 
     # ── selection ─────────────────────────────────────────────────────────────
 
@@ -433,7 +433,7 @@ class ServicesView(QWidget):
             return
         mode = dlg.selected_mode()
         self._lock_btns()
-        w = _ActionWorker(['config', svc.name, f'start= {mode}'], self)
+        w = _ActionWorker(['config', svc.name, 'start=', mode], self)
         _labels = {'auto': 'Auto', 'delayed-auto': 'Delayed Auto',
                    'demand': 'Manual', 'disabled': 'Disabled'}
         def _done(ok: bool, msg: str) -> None:
@@ -463,6 +463,6 @@ class ServicesView(QWidget):
     @staticmethod
     def _svc_error(action: str, msg: str) -> None:
         text = msg or '(no error message)'
-        if any(k in text.lower() for k in ('5', 'access', 'denied')):
+        if any(k in text.lower() for k in (' 5:', 'access denied', 'error 5')):
             text += '\n\nTry running ST-SoftwareTool as Administrator.'
         QMessageBox.critical(None, f'{action} Failed', text)

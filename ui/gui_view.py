@@ -309,8 +309,9 @@ class GUIView(QWidget):
         for w in (self._perf_worker, self._gpu_worker, self._task_worker):
             if w.isRunning():
                 w.requestInterruption()
-                w.wake_now() if hasattr(w, 'wake_now') else None
-                w.wait(2000)
+                if hasattr(w, 'wake_now'):
+                    w.wake_now()
+                w.wait(5000)
         self._task_backend.cleanup()
         self._svc_view.cleanup()
         self._startup_view.cleanup()
@@ -834,7 +835,7 @@ class GUIView(QWidget):
         layout.setSpacing(6)
 
         if not self._task_backend.available:
-            msg = QLabel("Task Manager is unavailable.\n\nReinstall ST-SoftwareTool to fix this.")
+            msg = QLabel("Task Manager is unavailable.\n\npsutil could not be loaded.\nTry reinstalling ST-SoftwareTool.")
             msg.setAlignment(Qt.AlignCenter)
             msg.setFont(QFont("Consolas", 10))
             layout.addWidget(msg)
@@ -942,11 +943,10 @@ class GUIView(QWidget):
     # ── task manager callbacks ─────────────────────────────────────────────────
 
     def _on_tasks_ready(self, procs: list, hist: list):
-        # Virtual MVC model renders only visible rows — bulk set is instant
-        if hasattr(self, '_proc_model'):
+        if hasattr(self, '_proc_model') and hasattr(self, '_task_count_lbl'):
             self._proc_model.set_procs(procs)
             self._task_count_lbl.setText(f"Processes: {self._proc_proxy.rowCount()}")
-        if hasattr(self, '_hist_model'):
+        if hasattr(self, '_hist_model') and hasattr(self, '_hist_count_lbl'):
             self._hist_model.set_entries(hist)
             self._hist_count_lbl.setText(f"Entries: {len(hist)}")
 
@@ -1372,17 +1372,19 @@ class GUIView(QWidget):
     def _set_startup_registry(enable: bool) -> None:
         _RUN_KEY  = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
         _APP_NAME = 'ST-SoftwareTool'
-        _EXE_PATH = sys.executable  # python.exe or the frozen exe
-        # Prefer the script path when running as python script
-        try:
-            import __main__
-            script = getattr(__main__, '__file__', None)
-            if script:
-                _EXE_PATH = f'"{sys.executable}" "{os.path.abspath(script)}"'
-            else:
+        # In frozen/compiled mode just use the exe itself; no script path
+        if getattr(sys, 'frozen', False) or hasattr(sys, '__compiled__'):
+            _EXE_PATH = f'"{sys.executable}"'
+        else:
+            try:
+                import __main__
+                script = getattr(__main__, '__file__', None)
+                if script:
+                    _EXE_PATH = f'"{sys.executable}" "{os.path.abspath(script)}"'
+                else:
+                    _EXE_PATH = f'"{sys.executable}"'
+            except Exception:
                 _EXE_PATH = f'"{sys.executable}"'
-        except Exception:
-            pass
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE

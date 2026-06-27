@@ -73,6 +73,7 @@ class VpnView(QWidget):
         self._dl_worker: _DownloadWorker | None = None
         self._ip_worker: _IpWorker | None = None
         self._was_connected = False
+        self._last_circuit_refresh = 0.0
 
         self._build_ui()
 
@@ -407,8 +408,6 @@ class VpnView(QWidget):
         # Refresh real IP (now shows actual IP again)
         QTimer.singleShot(1500, self._fetch_ip)
 
-        self._warn_disconnected()
-
     def _warn_disconnected(self):
         mw = self.window()
         if hasattr(mw, '_notify'):
@@ -549,8 +548,9 @@ class VpnView(QWidget):
         self._sent_lbl.setText(self._mgr.fmt_bytes(s.bytes_sent))
         self._recv_lbl.setText(self._mgr.fmt_bytes(s.bytes_recv))
         self._total_lbl.setText(self._mgr.fmt_bytes(s.bytes_sent + s.bytes_recv))
-        # Refresh circuit display every ~30 s
-        if int(s.duration_s) % 30 == 0 and int(s.duration_s) > 0:
+        # Refresh circuit display every 30 s
+        if s.duration_s - self._last_circuit_refresh >= 30:
+            self._last_circuit_refresh = s.duration_s
             self._update_circuit()
 
     # ── kill switch ───────────────────────────────────────────────────────────
