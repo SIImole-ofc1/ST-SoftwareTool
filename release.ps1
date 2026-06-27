@@ -1,4 +1,4 @@
-# release.ps1 — Full automated release for ST-SoftwareTool
+﻿# release.ps1 — Full automated release for ST-SoftwareTool
 #
 # Usage:  .\release.ps1 1.2.0
 #
@@ -121,7 +121,7 @@ try {
         -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/tags/v$Version" `
         -Headers $h
     $releaseId = $existing.id
-    Write-Host "  Release v$Version already exists (id=$releaseId) — replacing installer." -ForegroundColor Yellow
+    Write-Host "  Release v$Version already exists (id=$releaseId) - replacing installer." -ForegroundColor Yellow
     # Delete existing installer asset so the new one can be uploaded
     foreach ($a in $existing.assets) {
         if ($a.name -eq "ST-SoftwareTool-Setup.exe") {
