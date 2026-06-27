@@ -398,22 +398,24 @@ class TorVpnManager:
         return s
 
     def fetch_ips(self) -> Tuple[str, str]:
-        """Return (tor_ipv4, tor_ipv6) of the current outgoing Tor address.
-
-        Uses the HTTP tunnel (same port as the Windows system proxy / Chrome)
-        so the displayed exit IP matches what browser traffic actually shows.
-        """
+        """Return (exit_ipv4, exit_ipv6) visible to external servers via Tor."""
         if self._connected:
-            v4 = (self._http_tunnel_get('http://checkip.amazonaws.com') or
-                  self._http_tunnel_get('http://api4.ipify.org'))
-            v6 = self._http_tunnel_get('http://api6.ipify.org')
+            # Tor's HTTPTunnelPort only handles HTTP CONNECT (not plain HTTP
+            # proxy), so we must use https:// URLs to trigger CONNECT.
+            # Fall back to SOCKS5 if the HTTP tunnel check fails.
+            v4 = (self._http_tunnel_get('https://checkip.amazonaws.com') or
+                  self._http_tunnel_get('https://api4.ipify.org')         or
+                  self._socks5_get('http://api4.ipify.org')               or
+                  self._socks5_get('http://checkip.amazonaws.com'))
+            v6 = (self._http_tunnel_get('https://api6.ipify.org') or
+                  self._socks5_get('http://api6.ipify.org'))
         else:
             v4 = _http_get('https://api.ipify.org')
             v6 = _http_get('https://api6.ipify.org')
         return v4, v6
 
     def _http_tunnel_get(self, url: str) -> str:
-        """Fetch URL through Tor's HTTP tunnel — the same proxy Chrome/Edge use."""
+        """Fetch URL through Tor's HTTP tunnel (CONNECT) — same as Chrome/Edge."""
         try:
             proxy = urllib.request.ProxyHandler({
                 'http':  f'http://127.0.0.1:{HTTP_TUNNEL}',
