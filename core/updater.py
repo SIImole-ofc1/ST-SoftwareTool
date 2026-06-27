@@ -26,7 +26,12 @@ class _Signal(QObject):
     found = Signal(str, str)  # remote_ver, asset_url
 
 
-def check_for_update(parent) -> None:
+def check_for_update(parent, force: bool = False) -> None:
+    """Check GitHub for a newer release.
+
+    force=True  — called from Help menu; always shows a result dialog.
+    force=False — silent startup check; only shows dialog when update found.
+    """
     sig = _Signal(parent)
     sig.found.connect(lambda ver, url: _prompt_and_download(parent, ver, url))
 
@@ -40,7 +45,14 @@ def check_for_update(parent) -> None:
                 data = json.loads(resp.read().decode())
 
             remote_ver: str = data.get("tag_name", "").lstrip("v")
-            if not remote_ver or _ver(remote_ver) <= _ver(APP_VERSION):
+            if not remote_ver:
+                if force:
+                    sig.found.emit("__error__", "")
+                return
+
+            if _ver(remote_ver) <= _ver(APP_VERSION):
+                if force:
+                    sig.found.emit("__uptodate__", "")
                 return
 
             asset_url = ""
@@ -51,12 +63,22 @@ def check_for_update(parent) -> None:
             if asset_url:
                 sig.found.emit(remote_ver, asset_url)
         except Exception:
-            pass
+            if force:
+                sig.found.emit("__error__", "")
 
     threading.Thread(target=_worker, daemon=True).start()
 
 
 def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> None:
+    if remote_ver == "__uptodate__":
+        QMessageBox.information(parent, "No Updates",
+                                f"You are on the latest version (v{APP_VERSION}).")
+        return
+    if remote_ver == "__error__":
+        QMessageBox.warning(parent, "Update Check Failed",
+                            "Could not reach the update server.\nCheck your internet connection and try again.")
+        return
+
     reply = QMessageBox.question(
         parent,
         "Update Available",
