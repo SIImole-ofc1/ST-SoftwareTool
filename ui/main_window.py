@@ -10,6 +10,7 @@ from .terminal_widget import TerminalWidget
 from .gui_view import GUIView
 from core.privacy_monitor import PrivacyMonitor
 from core.background_tasks import BackgroundScanner
+from core.updater import APP_VERSION
 
 
 class MainWindow(QMainWindow):
@@ -302,13 +303,13 @@ class MainWindow(QMainWindow):
 
     def _go_terminal(self):
         self.stack.setCurrentIndex(0)
-        self.statusBar().showMessage("Terminal Mode  |  ST-SoftwareTool v1.0")
+        self.statusBar().showMessage(f"Terminal Mode  |  ST-SoftwareTool v{APP_VERSION}")
         self.terminal.focus_input()
 
     def _go_gui(self):
         self.gui.refresh()
         self.stack.setCurrentIndex(1)
-        self.statusBar().showMessage("GUI Mode  |  ST-SoftwareTool v1.0")
+        self.statusBar().showMessage(f"GUI Mode  |  ST-SoftwareTool v{APP_VERSION}")
 
     def _toggle(self):
         if self.stack.currentIndex() == 0:
