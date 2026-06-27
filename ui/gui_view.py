@@ -1379,8 +1379,9 @@ class GUIView(QWidget):
     def _set_startup_registry(enable: bool) -> None:
         _RUN_KEY  = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
         _APP_NAME = 'ST-SoftwareTool'
-        # In frozen/compiled mode just use the exe itself; no script path
-        if getattr(sys, 'frozen', False) or hasattr(sys, '__compiled__'):
+        # In compiled mode (PyInstaller or Nuitka) use the exe itself; no script path
+        _pm = os.path.join(os.path.dirname(sys.executable), 'proc_monitor.exe')
+        if getattr(sys, 'frozen', False) or os.path.exists(_pm):
             _EXE_PATH = f'"{sys.executable}"'
         else:
             try:

@@ -28,8 +28,16 @@ from typing import Callable, List, Optional, Tuple
 
 import sys as _sys
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-if getattr(_sys, 'frozen', False):
-    # Nuitka standalone: data dirs live next to ST.exe, not inside the binary
+
+def _vpn_is_compiled() -> bool:
+    if getattr(_sys, 'frozen', False):   # PyInstaller
+        return True
+    # Nuitka: proc_monitor.exe is built alongside ST.exe
+    return os.path.exists(
+        os.path.join(os.path.dirname(_sys.executable), 'proc_monitor.exe')
+    )
+
+if _vpn_is_compiled():
     _APP_DIR  = os.path.dirname(_sys.executable)
     _TOR_DIR  = os.path.join(_APP_DIR, 'core', 'tor_bundle')
     _DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
