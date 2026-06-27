@@ -1,4 +1,4 @@
-; ST-Setup.iss — Inno Setup 6 installer script for ST-SoftwareTool
+﻿; ST-Setup.iss â€” Inno Setup 6 installer script for ST-SoftwareTool
 ;
 ; Prerequisites:
 ;   1. Run:  python -m nuitka ... main.py   (see release.ps1)
