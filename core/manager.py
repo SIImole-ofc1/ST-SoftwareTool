@@ -5,10 +5,18 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# When running as a frozen .exe installed to Program Files, %AppData% is the
-# correct writable location for user data.  During normal development the data/
-# folder next to the repo root is used as before.
-if getattr(sys, 'frozen', False):
+# When running as a compiled binary (PyInstaller or Nuitka), use %AppData% so
+# user data lands in a writable location.  In dev mode use the local data/ dir.
+# NOTE: Nuitka does NOT set sys.frozen — detect it via proc_monitor.exe sibling.
+def _is_compiled() -> bool:
+    if getattr(sys, 'frozen', False):          # PyInstaller
+        return True
+    # Nuitka: proc_monitor.exe is compiled alongside ST.exe
+    return os.path.exists(
+        os.path.join(os.path.dirname(sys.executable), 'proc_monitor.exe')
+    )
+
+if _is_compiled():
     DATA_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'ST-SoftwareTool'
 else:
     DATA_DIR = Path(__file__).parent.parent / "data"
