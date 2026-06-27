@@ -110,25 +110,45 @@ public class CredManR {
 '@
 
 $token = [CredManR]::GetPassword("git:https://github.com")
+if (-not $token) { Write-Host "ERROR: GitHub token not found in Credential Manager" -ForegroundColor Red; exit 1 }
 $h  = @{ Authorization = "token $token"; Accept = "application/vnd.github.v3+json" }
 $uh = @{ Authorization = "token $token"; "Content-Type" = "application/octet-stream" }
 
-$body = @{
-    tag_name = "v$Version"
-    name     = "ST-SoftwareTool v$Version"
-    body     = "ST-SoftwareTool v$Version`n`nDownload ST-SoftwareTool-Setup.exe below to install or upgrade."
-} | ConvertTo-Json
-
-$release = Invoke-RestMethod -Method Post `
-    -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases" `
-    -Headers $h -Body $body -ContentType "application/json"
+# Check if the release already exists; create it only if it doesn't
+$releaseId = $null
+try {
+    $existing  = Invoke-RestMethod `
+        -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/tags/v$Version" `
+        -Headers $h
+    $releaseId = $existing.id
+    Write-Host "  Release v$Version already exists (id=$releaseId) — replacing installer." -ForegroundColor Yellow
+    # Delete existing installer asset so the new one can be uploaded
+    foreach ($a in $existing.assets) {
+        if ($a.name -eq "ST-SoftwareTool-Setup.exe") {
+            Invoke-RestMethod -Method Delete `
+                -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/assets/$($a.id)" `
+                -Headers $h | Out-Null
+        }
+    }
+} catch {
+    $body = @{
+        tag_name = "v$Version"
+        name     = "ST-SoftwareTool v$Version"
+        body     = "ST-SoftwareTool v$Version`n`nDownload ST-SoftwareTool-Setup.exe below to install or upgrade."
+    } | ConvertTo-Json
+    $release   = Invoke-RestMethod -Method Post `
+        -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases" `
+        -Headers $h -Body $body -ContentType "application/json"
+    $releaseId = $release.id
+    Write-Host "  Created new release v$Version (id=$releaseId)." -ForegroundColor Green
+}
 
 $installer = "$root\dist_nuitka\installer\ST-SoftwareTool-Setup.exe"
 $bytes = [System.IO.File]::ReadAllBytes($installer)
 Write-Host "  Uploading $([Math]::Round($bytes.Length/1MB,1)) MB..." -ForegroundColor Yellow
 
 $asset = Invoke-RestMethod -Method Post `
-    -Uri "https://uploads.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/$($release.id)/assets?name=ST-SoftwareTool-Setup.exe" `
+    -Uri "https://uploads.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/$releaseId/assets?name=ST-SoftwareTool-Setup.exe" `
     -Headers $uh -Body $bytes -TimeoutSec 300
 
 Write-Host "  Live: $($asset.browser_download_url)" -ForegroundColor Green

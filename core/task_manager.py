@@ -3,14 +3,26 @@
 psutil runs in a completely separate process so its GIL usage never stalls
 the main UI thread.  The background QThread just blocks on readline() while
 proc_monitor emits one JSON snapshot every ~1.8 seconds.
+
+Fallback: when proc_monitor is not found (old install / first run), psutil
+is used inline.  The persistent cpu_procs dict prevents the GIL-stall that
+the old per-refresh dict caused.
 """
 import json
 import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+try:
+    import psutil as _psutil
+    _CPU_COUNT = max(_psutil.cpu_count(logical=True) or 1, 1)
+except Exception:
+    _psutil = None  # type: ignore
+    _CPU_COUNT = 1
 
 
 def _find_monitor_cmd() -> List[str]:
@@ -73,12 +85,14 @@ class TaskManagerBackend:
     _MAX_HISTORY = 300
 
     def __init__(self):
-        self._cmd:     List[str]                    = _find_monitor_cmd()
-        self._proc:    Optional[subprocess.Popen]   = None
-        self._lock:    threading.Lock               = threading.Lock()
-        self._seen:    Dict[int, Tuple[str, float]] = {}
-        self._history: List[HistoryEntry]           = []
-        self.available: bool                        = bool(self._cmd)
+        self._cmd:        List[str]                    = _find_monitor_cmd()
+        self._proc:       Optional[subprocess.Popen]   = None
+        self._lock:       threading.Lock               = threading.Lock()
+        self._seen:       Dict[int, Tuple[str, float]] = {}
+        self._history:    List[HistoryEntry]           = []
+        # Fallback psutil state (used when proc_monitor subprocess is unavailable)
+        self._cpu_procs:  dict                         = {}
+        self.available:   bool                         = bool(self._cmd) or (_psutil is not None)
 
     # ── subprocess lifecycle ──────────────────────────────────────────────────
 
@@ -120,37 +134,80 @@ class TaskManagerBackend:
     def read_procs(self) -> Optional[List[ProcessInfo]]:
         """
         Block until proc_monitor emits one JSON line (~1.8 s), then parse it.
-        Returns None if the subprocess died or produced invalid data.
+        Falls back to inline psutil when proc_monitor subprocess is unavailable.
+        Returns None on fatal error.
         """
         with self._lock:
             proc = self._proc
-        if proc is None:
+
+        if proc is not None:
+            # Subprocess path — blocks on readline (~1.8 s, zero GIL impact)
+            try:
+                line = proc.stdout.readline()
+            except Exception:
+                self.stop_monitor()
+                return None
+            if not line:
+                self.stop_monitor()
+                return None
+            try:
+                data = json.loads(line.decode())
+            except Exception:
+                return None
+        elif _psutil is not None:
+            # Fallback path — psutil inline with persistent cpu objects
+            # Sleep first so callers don't spin; cpu_percent() needs an interval
+            time.sleep(1.8)
+            _ATTRS = ['pid', 'name', 'cpu_percent', 'memory_info',
+                      'memory_percent', 'status', 'create_time']
+            data = []
+            live_pids: set = set()
+            try:
+                for p in _psutil.process_iter(_ATTRS):
+                    try:
+                        info = p.info
+                        pid  = info['pid']
+                        if pid is None:
+                            continue
+                        live_pids.add(pid)
+                        cpu_obj = self._cpu_procs.get(pid)
+                        if cpu_obj is None:
+                            cpu_obj = _psutil.Process(pid)
+                            cpu_obj.cpu_percent(interval=None)
+                            self._cpu_procs[pid] = cpu_obj
+                            cpu_pct = 0.0
+                        else:
+                            raw = cpu_obj.cpu_percent(interval=None) or 0.0
+                            cpu_pct = round(min(raw / _CPU_COUNT, 100.0), 1)
+                        mem = info.get('memory_info')
+                        data.append({
+                            'pid':     pid,
+                            'name':    info.get('name') or f'[{pid}]',
+                            'cpu':     cpu_pct,
+                            'ram_mb':  round((mem.rss if mem else 0) / 1_048_576, 1),
+                            'ram_pct': round(info.get('memory_percent') or 0.0, 1),
+                            'status':  info.get('status') or 'unknown',
+                            'ct':      info.get('create_time') or 0.0,
+                        })
+                    except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+                        pass
+            except Exception:
+                return None
+            # Clean up dead processes from cpu_procs
+            for dead in set(self._cpu_procs) - live_pids:
+                self._cpu_procs.pop(dead, None)
+        else:
             return None
 
-        try:
-            line = proc.stdout.readline()
-        except Exception:
-            self.stop_monitor()
-            return None
-
-        if not line:
-            self.stop_monitor()
-            return None
-
-        try:
-            data = json.loads(line.decode())
-        except Exception:
-            return None
-
-        now_ts      = datetime.now().timestamp()
-        live_pids:  set             = set()
-        results:    List[ProcessInfo] = []
+        now_ts   = datetime.now().timestamp()
+        results: List[ProcessInfo] = []
+        live:    set = set()
 
         for item in data:
             pid = item.get('pid')
             if pid is None:
                 continue
-            live_pids.add(pid)
+            live.add(pid)
 
             name = item.get('name') or f'[{pid}]'
             ct   = item.get('ct') or 0.0
@@ -177,7 +234,7 @@ class TaskManagerBackend:
             ))
 
         # Update closed-process history
-        gone = set(self._seen) - live_pids
+        gone = set(self._seen) - live
         for pid in gone:
             sname, sts = self._seen.pop(pid)
             self._history.append(HistoryEntry(
