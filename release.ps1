@@ -40,7 +40,7 @@ Set-Location $root
 # Clean previous Nuitka outputs
 Remove-Item -Recurse -Force dist_nuitka -ErrorAction SilentlyContinue
 
-# Build main app (psutil is used directly — no separate proc_monitor needed)
+# Build main app
 python -m nuitka `
     --standalone `
     --windows-console-mode=disable `
@@ -53,6 +53,20 @@ python -m nuitka `
     --assume-yes-for-downloads `
     main.py 2>$null
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Nuitka main build failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit 1 }
+
+# Build proc_monitor — psutil runs here so the main process stays GIL-free
+python -m nuitka `
+    --standalone `
+    --windows-console-mode=attach `
+    --output-dir=dist_nuitka\proc_monitor_build `
+    --output-filename=proc_monitor.exe `
+    --assume-yes-for-downloads `
+    core\proc_monitor.py 2>$null
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Nuitka proc_monitor build failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit 1 }
+
+# Copy proc_monitor.exe into the main app distribution folder
+Copy-Item "dist_nuitka\proc_monitor_build\proc_monitor.dist\proc_monitor.exe" `
+          "dist_nuitka\main.dist\proc_monitor.exe" -Force
 
 # Nuitka --include-data-dir silently skips .exe and .dll files from data dirs.
 # Manually copy the full tor_bundle so tor.exe and tor-gencert.exe are included.

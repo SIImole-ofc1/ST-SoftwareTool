@@ -66,8 +66,6 @@ class _GpuWorker(QThread):
 
 # ── background task-list polling thread ──────────────────────────────────────
 
-_TASK_REFRESH_S = 2.0   # auto-refresh interval — matches Task Manager default
-
 class _TaskWorker(QThread):
     data_ready = Signal(list, list)
 
@@ -78,32 +76,40 @@ class _TaskWorker(QThread):
         self._active  = threading.Event()
 
     def activate(self):
-        """Tab became visible — enable continuous refresh and trigger immediately."""
+        """Tab became visible — start subprocess and begin streaming data."""
         self._active.set()
         self._wake.set()
 
     def deactivate(self):
-        """Tab hidden — stop refreshing; wake thread so it settles to idle wait."""
+        """Tab hidden — kill subprocess so readline() unblocks immediately."""
         self._active.clear()
+        self._backend.stop_monitor()
         self._wake.set()
 
     def wake_now(self):
-        """Refresh button pressed — trigger one extra refresh immediately."""
+        """Refresh button — next line arrives in ≤1.8 s from the subprocess."""
         self._wake.set()
 
     def run(self):
         while not self.isInterruptionRequested():
-            if self._active.is_set():
-                # Active: refresh, then sleep until next cycle or interrupt
-                procs = self._backend.refresh()
-                hist  = self._backend.history()
-                self.data_ready.emit(procs, hist)
-                self._wake.wait(timeout=_TASK_REFRESH_S)
-                self._wake.clear()
-            else:
-                # Idle: park the thread until activated again
+            if not self._active.is_set():
+                # Parked: wait until activated or interrupted
                 self._wake.wait(timeout=60.0)
                 self._wake.clear()
+                continue
+
+            # Ensure proc_monitor subprocess is running
+            if not self._backend.is_alive():
+                if not self._backend.start_monitor():
+                    self._wake.wait(timeout=5.0)
+                    self._wake.clear()
+                    continue
+
+            # Block here ~1.8 s while proc_monitor collects data.
+            # No GIL impact on the main thread — psutil runs in a separate process.
+            procs = self._backend.read_procs()
+            if procs is not None:
+                self.data_ready.emit(procs, self._backend.history())
 
 
 # ── background perf polling thread (keeps disk/net off the main thread) ───────
@@ -306,13 +312,14 @@ class GUIView(QWidget):
             self._task_worker.start()
 
     def cleanup(self):
+        # Stop subprocess first so the background thread unblocks from readline()
+        self._task_backend.cleanup()
         for w in (self._perf_worker, self._gpu_worker, self._task_worker):
             if w.isRunning():
                 w.requestInterruption()
                 if hasattr(w, 'wake_now'):
                     w.wake_now()
                 w.wait(5000)
-        self._task_backend.cleanup()
         self._svc_view.cleanup()
         self._startup_view.cleanup()
         self._antivirus_view.cleanup()
