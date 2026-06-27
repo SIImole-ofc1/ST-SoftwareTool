@@ -778,25 +778,21 @@ class TorVpnManager:
     # ── internal: proxy / process / network ───────────────────────────────────
 
     def _set_proxy(self, enable: bool):
-        # Use both the HTTP tunnel (port 8118) for http/https traffic
-        # AND the SOCKS5 port (9050) — together they cover virtually all apps.
-        proxy_str = (
-            f'http=127.0.0.1:{HTTP_TUNNEL};'
-            f'https=127.0.0.1:{HTTP_TUNNEL};'
-            f'socks=127.0.0.1:{SOCKS_PORT}'
-        )
+        # Route http and https through Tor's HTTP tunnel.
+        # Single-format string "host:port" is the most universally supported
+        # by WinINet, WinHTTP (Chrome/Edge), and Electron apps alike.
+        proxy_str = f'127.0.0.1:{HTTP_TUNNEL}'
+        bypass    = 'localhost;127.*;10.*;172.16.*;192.168.*;<local>'
+
+        # ── 1. Write registry (WinINet canonical location) ───────────────────
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER, _PROXY_REG, 0, winreg.KEY_SET_VALUE
             )
             if enable:
-                winreg.SetValueEx(key, 'ProxyEnable', 0, winreg.REG_DWORD, 1)
-                winreg.SetValueEx(key, 'ProxyServer', 0, winreg.REG_SZ, proxy_str)
-                # Exclude localhost from the proxy so local apps still work
-                winreg.SetValueEx(
-                    key, 'ProxyOverride', 0, winreg.REG_SZ,
-                    'localhost;127.*;10.*;172.16.*;192.168.*;<local>'
-                )
+                winreg.SetValueEx(key, 'ProxyEnable',   0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(key, 'ProxyServer',   0, winreg.REG_SZ, proxy_str)
+                winreg.SetValueEx(key, 'ProxyOverride', 0, winreg.REG_SZ, bypass)
             else:
                 winreg.SetValueEx(key, 'ProxyEnable', 0, winreg.REG_DWORD, 0)
                 for name in ('ProxyServer', 'ProxyOverride'):
@@ -807,11 +803,26 @@ class TorVpnManager:
             winreg.CloseKey(key)
         except OSError:
             pass
-        # Notify WinINet so the change takes effect immediately
+
+        # ── 2. WinINet refresh (IE / legacy WinINet apps) ────────────────────
         try:
             wi = ctypes.windll.wininet
-            wi.InternetSetOptionW(0, 37, None, 0)   # SETTINGS_CHANGED
-            wi.InternetSetOptionW(0, 39, None, 0)   # REFRESH
+            wi.InternetSetOptionW(0, 39, None, 0)   # INTERNET_OPTION_SETTINGS_CHANGED
+            wi.InternetSetOptionW(0, 37, None, 0)   # INTERNET_OPTION_REFRESH
+        except Exception:
+            pass
+
+        # ── 3. WM_SETTINGCHANGE broadcast (Chrome / Edge / Firefox / Electron)
+        # This is exactly what Windows Settings sends when you toggle proxy — it
+        # tells every running process to re-read proxy settings immediately.
+        try:
+            HWND_BROADCAST  = 0xFFFF
+            WM_SETTINGCHANGE = 0x001A
+            SMTO_ABORTIFHUNG = 0x0002
+            ctypes.windll.user32.SendMessageTimeoutW(
+                HWND_BROADCAST, WM_SETTINGCHANGE, 0, 'InternetSettings',
+                SMTO_ABORTIFHUNG, 2000, None,
+            )
         except Exception:
             pass
 
