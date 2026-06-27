@@ -174,7 +174,7 @@ class VpnView(QWidget):
         btn_row.addStretch()
         root.addLayout(btn_row)
 
-        # ── Kill Switch toggle ────────────────────────────────────────────────
+        # ── Kill Switch + Stealth toggles ─────────────────────────────────────
         ks_row = QHBoxLayout()
         ks_row.addStretch()
         self._ks_chk = QCheckBox('Kill Switch')
@@ -191,6 +191,14 @@ class VpnView(QWidget):
         )
         self._ks_status_lbl.setVisible(False)
         ks_row.addWidget(self._ks_status_lbl)
+        ks_row.addSpacing(20)
+        self._stealth_chk = QCheckBox('Stealth Mode')
+        self._stealth_chk.setToolTip(
+            'Use obfs4 / Snowflake bridges to disguise Tor traffic.\n'
+            'Only needed in countries that block Tor (China, Iran, Russia…).\n'
+            'Leaves this OFF for normal use — plain Tor is faster.'
+        )
+        ks_row.addWidget(self._stealth_chk)
         ks_row.addStretch()
         root.addLayout(ks_row)
 
@@ -333,8 +341,15 @@ class VpnView(QWidget):
             self._mgr.ks_deactivate()
             self._ks_status_lbl.setVisible(False)
 
-        # Auto-select the best available stealth mode (obfs4 > Snowflake > plain Tor)
-        stealth_desc = self._mgr.auto_stealth()
+        # Use stealth/bridges only when the user explicitly ticks the checkbox.
+        # auto_stealth() was previously called unconditionally here, forcing obfs4
+        # bridges (via lyrebird.exe) even for users in non-censored regions —
+        # bridges are slow and often cause the "infinite connecting" symptom.
+        if self._stealth_chk.isChecked():
+            stealth_desc = self._mgr.auto_stealth()
+        else:
+            self._mgr.set_stealth('none', [])
+            stealth_desc = 'Off  (plain Tor)'
         self._stealth_lbl.setText(f'Stealth: {stealth_desc}  (verify at check.torproject.org)')
         self._stealth_lbl.setVisible(False)   # shown after connect succeeds
 
