@@ -398,20 +398,32 @@ class TorVpnManager:
         return s
 
     def fetch_ips(self) -> Tuple[str, str]:
-        """Return (ipv4, ipv6) of the current outgoing address.
+        """Return (tor_ipv4, tor_ipv6) of the current outgoing Tor address.
 
-        When connected, routes the check through Tor's SOCKS5 port so the
-        result reflects what websites actually see, not the real local IP.
+        Uses the HTTP tunnel (same port as the Windows system proxy / Chrome)
+        so the displayed exit IP matches what browser traffic actually shows.
         """
         if self._connected:
-            # Go through the Tor SOCKS5 proxy — this is what sites see
-            v4 = self._socks5_get('http://api4.ipify.org') or \
-                 self._socks5_get('http://checkip.amazonaws.com')
-            v6 = self._socks5_get('http://api6.ipify.org')
+            v4 = (self._http_tunnel_get('http://checkip.amazonaws.com') or
+                  self._http_tunnel_get('http://api4.ipify.org'))
+            v6 = self._http_tunnel_get('http://api6.ipify.org')
         else:
             v4 = _http_get('https://api.ipify.org')
             v6 = _http_get('https://api6.ipify.org')
         return v4, v6
+
+    def _http_tunnel_get(self, url: str) -> str:
+        """Fetch URL through Tor's HTTP tunnel — the same proxy Chrome/Edge use."""
+        try:
+            proxy = urllib.request.ProxyHandler({
+                'http':  f'http://127.0.0.1:{HTTP_TUNNEL}',
+                'https': f'http://127.0.0.1:{HTTP_TUNNEL}',
+            })
+            opener = urllib.request.build_opener(proxy)
+            with opener.open(url, timeout=15) as r:
+                return r.read().decode('utf-8', errors='replace').strip()
+        except Exception:
+            return ''
 
     def _socks5_get(self, url: str) -> str:
         """
@@ -703,11 +715,18 @@ class TorVpnManager:
                     nickname    = m.group(2) or '',
                     role        = roles[min(idx, len(roles) - 1)],
                 )
-                # Resolve fingerprint → router status entry → IP
+                # Resolve fingerprint → router status entry → ORPort IP
                 ns = self._ctrl_cmd(f'GETINFO ns/id/{hop.fingerprint}')
                 ip_m = re.search(r'^r \S+ \S+ \S+ \S+ \S+ (\S+) ', ns, re.M)
                 if ip_m:
                     hop.ip = ip_m.group(1)
+                    # For exit nodes, prefer the ExitAddress if the relay has one
+                    # (some relays exit from a different IP than their ORPort).
+                    if hop.role == 'Exit':
+                        desc = self._ctrl_cmd(f'GETINFO desc/id/{hop.fingerprint}')
+                        ea = re.search(r'^exit-address (\S+)', desc, re.M)
+                        if ea:
+                            hop.ip = ea.group(1)
                     cc = self._ctrl_cmd(f'GETINFO ip-to-country/{hop.ip}')
                     m2 = re.search(r'ip-to-country/[\d.]+=(\S+)', cc)
                     if m2:
