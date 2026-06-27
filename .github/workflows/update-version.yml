@@ -1,0 +1,37 @@
+name: Auto-update website version
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version in index.html
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          # Replace content of every .gh-version span
+          sed -i 's|<span class="gh-version">[^<]*</span>|<span class="gh-version">'"$VERSION"'</span>|g' index.html
+          echo "Updated index.html to $VERSION"
+          grep 'gh-version' index.html | head -3
+
+      - name: Commit and push
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if git diff --cached --quiet; then
+            echo "No changes to commit (version already up to date)"
+          else
+            git commit -m "chore: bump website version to $VERSION"
+            git push origin main
+          fi
