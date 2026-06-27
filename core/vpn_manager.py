@@ -799,11 +799,18 @@ class TorVpnManager:
     # ── internal: proxy / process / network ───────────────────────────────────
 
     def _set_proxy(self, enable: bool):
-        # Route http and https through Tor's HTTP tunnel.
-        # Single-format string "host:port" is the most universally supported
-        # by WinINet, WinHTTP (Chrome/Edge), and Electron apps alike.
-        proxy_str = f'127.0.0.1:{HTTP_TUNNEL}'
-        bypass    = 'localhost;127.*;10.*;172.16.*;192.168.*;<local>'
+        # Per-type proxy format: http/https through Tor's HTTP CONNECT tunnel
+        # (port 8118) and socks through Tor's SOCKS5 port (9050).
+        # This format is required — the single-format "host:port" treats port 8118
+        # as an HTTP proxy, but Tor's HTTPTunnelPort only handles CONNECT (used
+        # for HTTPS), NOT plain HTTP proxy requests, so HTTP sites would break.
+        # Chrome, Edge, Firefox, and Electron all honour the per-type format.
+        proxy_str = (
+            f'http=127.0.0.1:{HTTP_TUNNEL};'
+            f'https=127.0.0.1:{HTTP_TUNNEL};'
+            f'socks=127.0.0.1:{SOCKS_PORT}'
+        )
+        bypass = 'localhost;127.*;10.*;172.16.*;192.168.*;<local>'
 
         # ── 1. Write registry (WinINet canonical location) ───────────────────
         try:
