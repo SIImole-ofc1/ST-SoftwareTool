@@ -1,95 +1,90 @@
-#!/usr/bin/env python3
 """
-Subprocess process monitor — psutil runs here, completely isolated from the
-main process and its GIL.  The main app communicates via stdin/stdout:
-
-  stdin  ← 'refresh\n'   ask for a fresh process snapshot
-  stdout → one JSON line  list of process dicts
-  stdin  ← 'quit\n'      shut down cleanly
+Standalone subprocess — enumerates processes with psutil and pushes one JSON
+line to stdout every ~INTERVAL seconds.  The parent (ST.exe) reads these lines
+in a background thread so psutil's GIL usage never stalls the UI event loop.
 """
-import sys, json
-from datetime import datetime
+import json
+import sys
+import time
 
 try:
     import psutil
+    _cpu_count    = psutil.cpu_count(logical=True) or 1
+    _total_ram_mb = (psutil.virtual_memory().total / 1_048_576) or 1.0
 except ImportError:
-    print(json.dumps({'error': 'psutil_missing'}), flush=True)
     sys.exit(1)
 
-_cpu_count = psutil.cpu_count(logical=True) or 1
-_cache: dict = {}   # pid -> psutil.Process, maintained across refreshes for cpu_percent
-_ATTRS = ['pid', 'name', 'status', 'create_time', 'memory_info', 'memory_percent']
+INTERVAL = 1.8   # slightly under 2 s — reader always sees fresh data on each 2-s tick
+_ATTRS   = ['pid', 'name', 'status', 'create_time', 'memory_info']
 
 
-def _refresh() -> list:
-    current_pids: set = set()
-    rows: list = []
+def main() -> None:
+    cpu_procs: dict = {}   # pid -> persistent psutil.Process for cpu_percent tracking
 
-    for proc in psutil.process_iter(_ATTRS):
+    while True:
+        t0        = time.monotonic()
+        procs     = []
+        live_pids: set = set()
+
         try:
-            info = proc.info
-            pid  = info.get('pid')
-            if pid is None:
-                continue
-            current_pids.add(pid)
-
-            name = (info.get('name') or '').strip() or f'[{pid}]'
-
-            started_str = None
-            started_ts  = 0.0
-            raw_ct = info.get('create_time')
-            if raw_ct:
+            for p in psutil.process_iter(_ATTRS):
                 try:
-                    started_str = datetime.fromtimestamp(raw_ct).strftime('%H:%M:%S')
-                    started_ts  = float(raw_ct)
-                except (OSError, OverflowError):
-                    pass
+                    info = p.info
+                    pid  = info['pid']
+                    if pid is None:
+                        continue
+                    live_pids.add(pid)
 
-            if pid not in _cache:
-                _cache[pid] = proc
-                try:
-                    proc.cpu_percent(interval=None)  # seed — always 0 on first call
-                except Exception:
-                    pass
-                cpu_pct = 0.0
-            else:
-                try:
-                    raw = _cache[pid].cpu_percent(interval=None) or 0.0
-                    cpu_pct = round(min(raw / _cpu_count, 100.0), 1)
-                except Exception:
-                    cpu_pct = 0.0
-                _cache[pid] = proc
+                    name = (info.get('name') or '').strip() or f'[{pid}]'
 
-            mem     = info.get('memory_info')
-            ram_mb  = round(mem.rss / 1_048_576, 1) if mem else 0.0
-            ram_pct = round(float(info.get('memory_percent') or 0.0), 1)
+                    cpu_obj = cpu_procs.get(pid)
+                    if cpu_obj is None:
+                        try:
+                            cpu_obj = psutil.Process(pid)
+                            cpu_obj.cpu_percent(interval=None)   # seed first reading
+                            cpu_procs[pid] = cpu_obj
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                        cpu_pct = 0.0
+                    else:
+                        try:
+                            raw     = cpu_obj.cpu_percent(interval=None) or 0.0
+                            cpu_pct = round(min(raw / _cpu_count, 100.0), 1)
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            cpu_procs.pop(pid, None)
+                            cpu_pct = 0.0
 
-            rows.append({
-                'pid':        pid,
-                'name':       name,
-                'cpu':        cpu_pct,
-                'ram_mb':     ram_mb,
-                'ram_pct':    ram_pct,
-                'status':     info.get('status') or 'unknown',
-                'started':    started_str,
-                'started_ts': started_ts,
-            })
+                    mem     = info.get('memory_info')
+                    ram_mb  = round(mem.rss / 1_048_576, 1) if mem else 0.0
+                    ram_pct = round(ram_mb / _total_ram_mb * 100.0, 1)
+
+                    procs.append({
+                        'pid':     pid,
+                        'name':    name,
+                        'cpu':     cpu_pct,
+                        'ram_mb':  ram_mb,
+                        'ram_pct': ram_pct,
+                        'status':  info.get('status') or 'unknown',
+                        'ct':      info.get('create_time') or 0.0,
+                    })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
         except Exception:
-            continue
+            pass
 
-    for pid in set(_cache) - current_pids:
-        del _cache[pid]
+        for pid in list(cpu_procs):
+            if pid not in live_pids:
+                del cpu_procs[pid]
 
-    return rows
+        try:
+            sys.stdout.buffer.write(json.dumps(procs).encode() + b'\n')
+            sys.stdout.buffer.flush()
+        except (BrokenPipeError, OSError):
+            break
+
+        elapsed = time.monotonic() - t0
+        time.sleep(max(0.0, INTERVAL - elapsed))
 
 
 if __name__ == '__main__':
-    for raw_line in sys.stdin:
-        cmd = raw_line.strip()
-        if cmd == 'refresh':
-            try:
-                print(json.dumps(_refresh()), flush=True)
-            except Exception as exc:
-                print(json.dumps({'error': str(exc)}), flush=True)
-        elif cmd == 'quit':
-            break
+    main()
