@@ -277,6 +277,12 @@ class MainWindow(QMainWindow):
         # Help
         help_m = mb.addMenu("Help")
 
+        a_update = QAction("Check for Updates", self)
+        a_update.triggered.connect(lambda: check_for_update(self, force=True))
+        help_m.addAction(a_update)
+
+        help_m.addSeparator()
+
         a_about = QAction("About ST-SoftwareTool", self)
         a_about.triggered.connect(self._about)
         help_m.addAction(a_about)
