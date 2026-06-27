@@ -369,7 +369,7 @@ class VpnView(QWidget):
             return
 
         self._was_connected = True
-        self._status_lbl.setText('● CONNECTED  —  HTTP/HTTPS traffic routed through Tor')
+        self._status_lbl.setText('● CONNECTED  —  Your traffic is anonymized')
         self._status_lbl.setStyleSheet('color: #00cc33; font-weight: bold;')
         self._connect_btn.setText('Disconnect')
         self._connect_btn.setEnabled(True)
@@ -535,7 +535,7 @@ class VpnView(QWidget):
             else:
                 lbl.setText('—')
         if self._mgr.is_connected():
-            self._status_lbl.setText('● CONNECTED  —  HTTP/HTTPS traffic routed through Tor')
+            self._status_lbl.setText('● CONNECTED  —  Your traffic is anonymized')
 
     # ── stats tick ────────────────────────────────────────────────────────────
 
