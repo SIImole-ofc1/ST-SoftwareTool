@@ -525,18 +525,23 @@ class TorVpnManager:
             if os.path.exists(p6):
                 geoip6 = p6
 
+        def _fp(p: str) -> str:
+            # Tor's config parser rejects backslash escape sequences inside
+            # quoted strings on Windows — use forward slashes instead.
+            return p.replace('\\', '/')
+
         lines = [
             f'SocksPort {SOCKS_PORT}',
             f'ControlPort {CONTROL_PORT}',
             f'HTTPTunnelPort {HTTP_TUNNEL}',
             'CookieAuthentication 1',
-            f'DataDirectory "{_DATA_DIR}"',
+            f'DataDirectory "{_fp(_DATA_DIR)}"',
             'Log notice stdout',
         ]
         if geoip4:
-            lines.append(f'GeoIPFile "{geoip4}"')
+            lines.append(f'GeoIPFile "{_fp(geoip4)}"')
         if geoip6:
-            lines.append(f'GeoIPv6File "{geoip6}"')
+            lines.append(f'GeoIPv6File "{_fp(geoip6)}"')
 
         # ── Stealth / pluggable transports ────────────────────────────────────
         if self._stealth_mode == STEALTH_OBFS4:
@@ -546,7 +551,7 @@ class TorVpnManager:
                 bridges = self._obfs4_bridges or _OBFS4_BRIDGES
                 lines += [
                     'UseBridges 1',
-                    f'ClientTransportPlugin obfs4 exec "{pt}"',
+                    f'ClientTransportPlugin obfs4 exec "{_fp(pt)}"',
                 ]
                 for b in bridges:
                     b = b.strip()
@@ -560,7 +565,7 @@ class TorVpnManager:
                 log = os.path.join(_DATA_DIR, 'snowflake.log')
                 lines += [
                     'UseBridges 1',
-                    f'ClientTransportPlugin snowflake exec "{pt}" -log "{log}"',
+                    f'ClientTransportPlugin snowflake exec "{_fp(pt)}" -log "{_fp(log)}"',
                 ]
                 for b in _SNOWFLAKE_BRIDGES:
                     lines.append(f'Bridge {b}')
