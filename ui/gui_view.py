@@ -300,7 +300,7 @@ class GUIView(QWidget):
         self.refresh()
 
         # Apply saved theme to sidebar immediately
-        _saved_theme = self.manager.settings.get("theme", "dark")
+        _saved_theme = self.manager.settings.get("theme", "win95")
         self._dev_settings.set_theme(_saved_theme)
 
         if self._perf.available:
@@ -573,7 +573,7 @@ class GUIView(QWidget):
             layout.addLayout(row, 1)
 
         # Apply current theme to freshly created graphs
-        current_theme = self.manager.settings.get("theme", "dark")
+        current_theme = self.manager.settings.get("theme", "win95")
         self.set_perf_theme(current_theme)
 
         note = QLabel(
@@ -1038,7 +1038,7 @@ class GUIView(QWidget):
         for rb in (self.rb_dark, self.rb_dark_bw, self.rb_light, self.rb_hc, self.rb_win95):
             bg_theme.addButton(rb)
             tl.addWidget(rb)
-        current = self.manager.settings.get("theme", "dark")
+        current = self.manager.settings.get("theme", "win95")
         {
             "dark": self.rb_dark, "dark_bw": self.rb_dark_bw,
             "light": self.rb_light, "hc": self.rb_hc, "win95": self.rb_win95,
