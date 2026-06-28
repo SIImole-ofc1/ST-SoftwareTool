@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
         self.manager      = manager
         self.processor    = processor
         self._force_quit  = False   # set True to bypass minimize-to-tray
-        self.setWindowTitle("ST-SoftwareTool")
+        self.setWindowTitle(f"ST-SoftwareTool  v{APP_VERSION}")
         self.setMinimumSize(820, 580)
         self.resize(960, 660)
 
@@ -725,7 +725,7 @@ class MainWindow(QMainWindow):
             ico.setPixmap(QPixmap(_icon_path).scaled(56, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             hdr.addWidget(ico)
             hdr.addSpacing(10)
-        title = QLabel("<b>ST-SoftwareTool  v1.0</b>")
+        title = QLabel(f"<b>ST-SoftwareTool  v{APP_VERSION}</b>")
         title.setFont(QFont("Segoe UI", 13))
         hdr.addWidget(title)
         hdr.addStretch()
