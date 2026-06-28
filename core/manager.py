@@ -59,7 +59,7 @@ class AppManager:
     def __init__(self):
         self.apps: List[App] = []
         self.categories: List[str] = list(DEFAULT_CATEGORIES)
-        self.settings: dict = {"theme": "dark", "default_view": "terminal"}
+        self.settings: dict = {"theme": "win95", "default_view": "terminal"}
         self.load()
 
     def load(self):

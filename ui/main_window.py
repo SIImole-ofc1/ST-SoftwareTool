@@ -348,7 +348,7 @@ class MainWindow(QMainWindow):
         self._apply_theme()
 
     def _apply_theme(self):
-        theme = self.manager.settings.get("theme", "dark")
+        theme = self.manager.settings.get("theme", "win95")
 
         if theme == "dark":
             qss = """
