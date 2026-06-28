@@ -11,7 +11,7 @@ import urllib.request
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-APP_VERSION = "1.0.15"
+APP_VERSION = "1.0.16"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
 
 
@@ -149,10 +149,11 @@ def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> None:
             progress.setValue(100)
             progress.close()
             subprocess.Popen(
-                [installer_path, '/VERYSILENT', '/NORESTART', '/CLOSEAPPLICATIONS'],
+                [installer_path, '/VERYSILENT', '/NORESTART'],
                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
             )
-            QTimer.singleShot(800, lambda: os._exit(0))
+            # Exit immediately so Inno Setup won't find us still running
+            os._exit(0)
             return
         progress.setValue(state["pct"])
         QTimer.singleShot(250, _poll)

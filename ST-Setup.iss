@@ -8,7 +8,7 @@
 ;      Output: dist_nuitka\installer\ST-SoftwareTool-Setup.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.15"
+#define AppVersion   "1.0.16"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
@@ -68,9 +68,11 @@ Source: "dist_nuitka\main.dist\*"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; \
+Name: "{autoprograms}\{#AppName}\{#AppName}"; \
     Filename: "{app}\{#AppExeName}"; \
     IconFilename: "{app}\{#AppExeName}"
+Name: "{autoprograms}\{#AppName}\Uninstall {#AppName}"; \
+    Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; \
     Filename: "{app}\{#AppExeName}"; \
     IconFilename: "{app}\{#AppExeName}"; \
