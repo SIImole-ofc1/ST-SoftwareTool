@@ -11,7 +11,7 @@ import urllib.request
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-APP_VERSION = "1.0.13"
+APP_VERSION = "1.0.14"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
 
 
@@ -125,12 +125,20 @@ def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> None:
                 state["done"] = True
         except Exception:
             state["error"] = True
+            try:
+                os.remove(installer_path)
+            except OSError:
+                pass
 
     threading.Thread(target=_download, daemon=True).start()
 
     def _poll():
         if progress.wasCanceled():
             state["cancelled"] = True
+            try:
+                os.remove(installer_path)
+            except OSError:
+                pass
             return
         if state["error"]:
             progress.close()
