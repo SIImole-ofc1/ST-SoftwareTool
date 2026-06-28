@@ -8,7 +8,7 @@
 ;      Output: dist_nuitka\installer\ST-SoftwareTool-Setup.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.17"
+#define AppVersion   "1.0.18"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
@@ -45,6 +45,21 @@ UninstallDisplayName={#AppName}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Code]
+procedure KillST();
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ST.exe', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  KillST();
+  Result := '';
+end;
 
 [Tasks]
 Name: "desktopicon"; \
