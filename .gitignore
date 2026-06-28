@@ -22,6 +22,9 @@ core/tor_data/
 .vscode/
 .idea/
 
+# Nuitka diagnostics
+nuitka-crash-report.xml
+
 # Build outputs — never commit these
 build/
 dist/

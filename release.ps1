@@ -31,6 +31,10 @@ $iss = "$root\ST-Setup.iss"
 (Get-Content $iss) -replace '#define AppVersion\s+"[^"]+"', "#define AppVersion   `"$Version`"" |
     Set-Content $iss -Encoding UTF8
 
+$html = "$root\index.html"
+(Get-Content $html -Raw) -replace '<span class="gh-version">[^<]*</span>', "<span class=""gh-version"">v$Version</span>" |
+    Set-Content $html -Encoding UTF8
+
 Write-Host "  Done." -ForegroundColor Green
 
 # ── 2. Nuitka (native compilation — no decompilable bytecode) ─────────────────
@@ -48,6 +52,7 @@ python -m nuitka `
     --windows-icon-from-ico=assets/STsoftwareterminalLOGO.ico `
     --include-data-dir=assets=assets `
     --include-data-dir=core/tor_bundle=core/tor_bundle `
+    --include-data-dir=tools=tools `
     --output-dir=dist_nuitka `
     --output-filename=ST.exe `
     --assume-yes-for-downloads `
@@ -156,7 +161,10 @@ Write-Host "  Live: $($asset.browser_download_url)" -ForegroundColor Green
 # ── 5. Git commit + push ──────────────────────────────────────────────────────
 Write-Host "`n[5/5] Committing and pushing..." -ForegroundColor Yellow
 Set-Location $root
-git add core/updater.py ST-Setup.iss index.html
+git add core/updater.py ST-Setup.iss index.html release.ps1
+git add core/commands.py ui/terminal_widget.py core/antivirus_manager.py
+git add tools/yt-dlp.exe 2>$null
+git add .gitignore 2>$null
 git commit -m "Release v$Version"
 git push origin main
 Write-Host "  Done. Cloudflare Pages will deploy in ~1 minute." -ForegroundColor Green

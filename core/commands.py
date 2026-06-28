@@ -30,6 +30,10 @@ App management:
   >_/from:unpin_app("Name")           Unpin an app
   >_/from:rename_app("old", "new")    Rename an app
 
+Download:
+  >_/from_youtube+URL={url}_download:to_Pictures
+                                      Download YouTube video to Pictures
+
 Search & Info:
   >_/find:search("query")             Search apps by name
   >_/find:info("Name")                Show app details
@@ -363,6 +367,14 @@ class CommandProcessor:
         if m:
             ok, msg = min_app(m.group(1))
             return CommandResult(ok, msg)
+
+        # ── from_youtube+URL={url}_download:to_Pictures ───────────────────────
+        m = re.fullmatch(r'from_youtube\+URL=(.+?)_download:to_Pictures', body, re.IGNORECASE)
+        if m:
+            url = m.group(1).strip()
+            if not (url.startswith("http://") or url.startswith("https://")):
+                return CommandResult(False, "Invalid URL. Must start with http:// or https://")
+            return CommandResult(True, f"Downloading: {url}", data={"url": url}, action="youtube_download")
 
         # ── gui:on_[True] / gui:on_[False] ────────────────────────────────────
         m = re.fullmatch(r'gui:on_\[(True|False)\]', body, re.IGNORECASE)
