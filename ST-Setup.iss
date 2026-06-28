@@ -8,7 +8,7 @@
 ;      Output: dist_nuitka\installer\ST-SoftwareTool-Setup.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.0.16"
+#define AppVersion   "1.0.17"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
@@ -24,8 +24,7 @@ AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
 DefaultDirName={autopf}\{#AppName}
 DisableProgramGroupPage=yes
-; Close the running app before installing (allows overwrite of locked files)
-CloseApplications=yes
+CloseApplications=no
 RestartApplications=no
 ; Installer output goes to dist_nuitka\installer\  (created automatically)
 OutputDir=dist_nuitka\installer
@@ -56,10 +55,6 @@ Name: "startuprun"; \
     Description: "Launch ST-SoftwareTool automatically with Windows"; \
     GroupDescription: "Startup options:"; \
     Flags: unchecked
-
-[InstallDelete]
-; Wipe the previous install before copying new files (ensures clean upgrade)
-Type: filesandordirs; Name: "{app}"
 
 [Files]
 ; Bundle the folder produced by Nuitka
