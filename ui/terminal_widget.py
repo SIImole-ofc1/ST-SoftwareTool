@@ -1,6 +1,9 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit, QCompleter, QFrame
-from PySide6.QtCore import Qt, Signal, QEvent
+from PySide6.QtCore import Qt, Signal, QEvent, QThread
 from PySide6.QtGui import QFont, QColor, QTextCursor, QFontMetrics
+import os
+import subprocess
+import sys
 
 # Dark  —  Black & Green
 _D = {
@@ -89,6 +92,62 @@ _BANNER = """\
   ║                                                  ║
   ╚══════════════════════════════════════════════════╝"""
 
+
+class _YtWorker(QThread):
+    progress = Signal(str)
+    finished = Signal(bool, str)
+
+    def __init__(self, url: str, dest_dir: str, exe_path: str):
+        super().__init__()
+        self._url = url
+        self._dest_dir = dest_dir
+        self._exe = exe_path
+
+    def run(self):
+        if not os.path.exists(self._exe):
+            self.finished.emit(False, f"yt-dlp.exe not found at: {self._exe}")
+            return
+
+        outtmpl = os.path.join(self._dest_dir, "%(title)s.%(ext)s")
+        cmd = [
+            self._exe,
+            "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "--output", outtmpl,
+            "--newline",
+            "--no-warnings",
+            self._url,
+        ]
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            title = ""
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line:
+                    continue
+                if "[download]" in line and "%" in line:
+                    self.progress.emit(f"  {line.strip()}")
+                elif "[download] Destination:" in line:
+                    fname = os.path.basename(line.split("Destination:", 1)[1].strip())
+                    if not title:  # keep first (video) filename, not the audio fragment
+                        title = os.path.splitext(fname)[0]
+                    self.progress.emit(f"  Saving: {fname}")
+                elif "[Merger]" in line or "[ffmpeg]" in line:
+                    self.progress.emit("  Merging audio and video...")
+            proc.wait()
+            if proc.returncode == 0:
+                self.finished.emit(True, f"Done! Saved to Pictures: {title or 'video'}")
+            else:
+                self.finished.emit(False, "Download failed. Check the URL and try again.")
+        except Exception as exc:
+            self.finished.emit(False, f"Download error: {exc}")
+
+
 _COMMAND_HINTS = [
     ">_/help:show",
     ">_/app:list",
@@ -115,6 +174,7 @@ _COMMAND_HINTS = [
     ">_/look=gui:theme_3",
     ">_/look=gui:theme_4",
     ">_/look=gui:theme_5",
+    ">_/from_youtube+URL={}_download:to_Pictures",
 ]
 
 
@@ -132,6 +192,7 @@ class TerminalWidget(QWidget):
         self._theme = manager.settings.get("theme", "dark")
         self._palette = _PALETTES.get(self._theme, _D)
         self._suggestions_enabled = manager.settings.get("terminal_suggestions", True)
+        self._yt_workers: list = []  # keep references so GC doesn't kill active threads
 
         self._build_ui()
         self._setup_completer()
@@ -238,16 +299,18 @@ class TerminalWidget(QWidget):
         return self._palette.get(kind, self._palette["text"])
 
     def _write(self, text: str, color: str = ""):
-        cur = self.output.textCursor()
-        cur.movePosition(QTextCursor.End)
-        self.output.setTextCursor(cur)
-        fmt = self.output.currentCharFormat()
-        fmt.setForeground(QColor(color or self._color("text")))
-        self.output.setCurrentCharFormat(fmt)
-        self.output.insertPlainText(text + "\n")
-        # scroll to bottom without animation
-        sb = self.output.verticalScrollBar()
-        sb.setValue(sb.maximum())
+        try:
+            cur = self.output.textCursor()
+            cur.movePosition(QTextCursor.End)
+            self.output.setTextCursor(cur)
+            fmt = self.output.currentCharFormat()
+            fmt.setForeground(QColor(color or self._color("text")))
+            self.output.setCurrentCharFormat(fmt)
+            self.output.insertPlainText(text + "\n")
+            sb = self.output.verticalScrollBar()
+            sb.setValue(sb.maximum())
+        except RuntimeError:
+            pass  # widget was destroyed (e.g. app closed mid-download)
 
     # ── command handling ──────────────────────────────────────────────────────
 
@@ -294,6 +357,10 @@ class TerminalWidget(QWidget):
             self.set_theme(theme)
             self.theme_changed.emit(theme)
             return
+        if action == "youtube_download":
+            self._write(result.message, self._color("info"))
+            self._run_yt_download(result.data["url"])
+            return
 
         if result.message:
             ink = self._color("text") if result.success else self._color("error")
@@ -321,6 +388,40 @@ class TerminalWidget(QWidget):
         except Exception as exc:
             self._write(f"Scan error: {exc}", self._color("error"))
         self._write("")
+
+    def _run_yt_download(self, url: str):
+        if self._yt_workers:
+            self._write("A download is already in progress. Please wait.", self._color("warn"))
+            return
+
+        pictures = os.path.join(os.path.expanduser("~"), "Pictures")
+        os.makedirs(pictures, exist_ok=True)
+
+        # Locate yt-dlp.exe: next to ST.exe when compiled, in tools/ in dev
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        exe_path = os.path.join(exe_dir, "tools", "yt-dlp.exe")
+        if not os.path.exists(exe_path):
+            exe_path = os.path.normpath(
+                os.path.join(os.path.dirname(__file__), "..", "tools", "yt-dlp.exe")
+            )
+
+        worker = _YtWorker(url, pictures, exe_path)
+        self._yt_workers.append(worker)
+
+        def _on_progress(line: str):
+            self._write(line, self._color("info"))
+
+        def _on_done(success: bool, msg: str):
+            ink = self._color("success") if success else self._color("error")
+            self._write(msg, ink)
+            self._write("")
+            if worker in self._yt_workers:
+                self._yt_workers.remove(worker)
+            worker.deleteLater()
+
+        worker.progress.connect(_on_progress)
+        worker.finished.connect(_on_done)
+        worker.start()
 
     # ── keyboard history navigation ───────────────────────────────────────────
 

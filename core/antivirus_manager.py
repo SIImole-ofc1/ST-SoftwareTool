@@ -99,6 +99,16 @@ class AntivirusManager:
     _CHECK_EXTS    = _EXE_EXTS | _SCRIPT_EXTS | {'.jar'}
     _DISGUISE_EXTS = _EXE_EXTS | _SCRIPT_EXTS
 
+    # Only these "fake" extensions indicate a real disguise (e.g. invoice.pdf.exe)
+    # Version numbers like "3.12.2" or "64-bit" are NOT document extensions
+    _DOC_DISGUISE_EXTS = {
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+        'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'ico', 'svg',
+        'txt', 'rtf', 'csv', 'xml', 'html', 'htm', 'json',
+        'zip', 'rar', '7z', 'iso', 'tar', 'gz',
+        'mp4', 'mp3', 'avi', 'mkv', 'wav', 'mov', 'flac',
+    }
+
     _SCRIPT_KW = [
         b'powershell -enc', b'powershell -e ',   b'-encodedcommand',
         b'invoke-expression', b'iex(',            b'iex (',
@@ -165,15 +175,15 @@ class AntivirusManager:
         self._stop = False
         threats: List[ThreatEntry] = []
 
-        for loc in [
-            os.path.expandvars('%TEMP%'),
-            os.path.expandvars('%TMP%'),
-            os.path.expandvars('%APPDATA%'),
-            os.path.join(os.path.expandvars('%LOCALAPPDATA%'), 'Temp'),
-            os.path.expanduser('~/Downloads'),
+        for loc, do_pe in [
+            (os.path.expandvars('%TEMP%'), True),
+            (os.path.expandvars('%TMP%'), True),
+            (os.path.expandvars('%APPDATA%'), True),
+            (os.path.join(os.path.expandvars('%LOCALAPPDATA%'), 'Temp'), True),
+            (os.path.expanduser('~/Downloads'), False),  # legit installers live here
         ]:
             if self._stop: break
-            self._scan_dir(loc, quick=True, do_pe=True,
+            self._scan_dir(loc, quick=True, do_pe=do_pe,
                            threats=threats, progress_cb=progress_cb, threat_cb=threat_cb)
 
         stages = [
@@ -264,14 +274,18 @@ class AntivirusManager:
         pl = fpath.lower()
 
         # Double-extension disguise  e.g. invoice.pdf.exe
+        # Only flag when the second-to-last part is a known document/media extension.
+        # Version numbers like "3.12.2" or "64-bit" are NOT document extensions.
         parts = fname.split('.')
         if len(parts) > 2 and ext in self._DISGUISE_EXTS:
-            return [ThreatEntry(
-                severity='red', category='Double-Extension Disguise',
-                path=fpath, file_path=fpath, threat_type='file',
-                reason=f'Executable disguised as .{parts[-2].upper()} file',
-                detail='Double extensions (invoice.pdf.exe) trick users into running malware.',
-            )]
+            fake_ext = parts[-2].lower()
+            if fake_ext in self._DOC_DISGUISE_EXTS:
+                return [ThreatEntry(
+                    severity='red', category='Double-Extension Disguise',
+                    path=fpath, file_path=fpath, threat_type='file',
+                    reason=f'Executable disguised as .{fake_ext.upper()} file',
+                    detail='Double extensions (invoice.pdf.exe) trick users into running malware.',
+                )]
 
         # Fake system-process name
         if fname in self._FAKE_SYSNAMES:
@@ -368,26 +382,34 @@ class AntivirusManager:
                 ))
 
             # Credential theft
-            if cred:
+            if len(cred) >= 2:
                 out.append(ThreatEntry(
                     severity='red', category='Credential Theft Tool',
                     path=fpath, file_path=fpath, threat_type='file',
-                    reason=f'Credential API: {", ".join(a.decode() for a in cred)}',
+                    reason=f'Credential APIs: {", ".join(a.decode() for a in cred)}',
                     detail=(
                         'APIs like MiniDumpWriteDump and LsaEnumerateLogonSessions are '
                         'used by tools like Mimikatz to extract passwords from memory.'
                     ),
                 ))
+            elif cred:
+                out.append(ThreatEntry(
+                    severity='orange', category='Credential API Detected',
+                    path=fpath, file_path=fpath, threat_type='file',
+                    reason=f'Suspicious API: {cred[0].decode()}',
+                    detail='May be a legitimate debugging or backup tool. Review before blocking.',
+                ))
 
             # High entropy alone (packed/obfuscated) — only if no other finding
-            if ent > 7.2 and not inject and not keylog and not cred:
+            # Threshold 7.5: catches UPX/custom packers, avoids legitimate NSIS/Inno Setup installers
+            if ent > 7.5 and not inject and not keylog and not cred:
                 out.append(ThreatEntry(
                     severity='orange', category='Packed / Obfuscated Executable',
                     path=fpath, file_path=fpath, threat_type='file',
-                    reason=f'Abnormally high entropy: {ent:.2f}/8.0  (threshold 7.2)',
+                    reason=f'Very high entropy: {ent:.2f}/8.0  (threshold 7.5)',
                     detail=(
-                        'High entropy means the file is packed, compressed, or encrypted. '
-                        'Legitimate software rarely reaches this level — common in malware loaders.'
+                        'Extremely high entropy suggests custom packing or encryption. '
+                        'Legitimate installers typically score 7.0–7.4; malware loaders score 7.5+.'
                     ),
                 ))
 
