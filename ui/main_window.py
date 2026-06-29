@@ -143,7 +143,7 @@ class MainWindow(QMainWindow):
 
     def _on_auto_scan_started(self):
         self._notify(
-            "ST AntiVirus",
+            "ST-AntiVirus",
             "Automatic hourly scan started…",
             QSystemTrayIcon.Information, 3000,
         )
@@ -151,20 +151,20 @@ class MainWindow(QMainWindow):
     def _on_auto_scan_done(self, total: int, blocked: int):
         if total == 0:
             self._notify(
-                "ST AntiVirus  —  All Clear",
+                "ST-AntiVirus  —  All Clear",
                 "Hourly scan finished.  No threats found.  Your system is clean.",
                 QSystemTrayIcon.Information, 6000,
             )
         elif blocked > 0:
             self._notify(
-                "ST AntiVirus  —  Threats Blocked!",
+                "ST-AntiVirus  —  Threats Blocked!",
                 f"Scan complete: {total} threat(s) found.\n"
                 f"{blocked} critical threat(s) were automatically blocked.",
                 QSystemTrayIcon.Critical, 8000,
             )
             QMessageBox.warning(
                 self,
-                "ST AntiVirus — Threats Blocked",
+                "ST-AntiVirus — Threats Blocked",
                 f"Hourly scan complete.\n\n"
                 f"{total} threat(s) were detected.\n"
                 f"{blocked} critical threat(s) were automatically blocked.\n\n"
@@ -172,14 +172,14 @@ class MainWindow(QMainWindow):
             )
         else:
             self._notify(
-                "ST AntiVirus  —  Threats Detected",
+                "ST-AntiVirus  —  Threats Detected",
                 f"Scan complete: {total} threat(s) found.\n"
-                f"Open ST AntiVirus to review and block them.",
+                f"Open ST-AntiVirus to review and block them.",
                 QSystemTrayIcon.Warning, 8000,
             )
             QMessageBox.warning(
                 self,
-                "ST AntiVirus — Threats Detected",
+                "ST-AntiVirus — Threats Detected",
                 f"Hourly scan complete.\n\n"
                 f"{total} threat(s) were detected on your system.\n\n"
                 f"Open the AntiVirus tab to review and block them.",
@@ -187,7 +187,7 @@ class MainWindow(QMainWindow):
 
     def _on_auto_blocked(self, threat):
         self._notify(
-            "ST AntiVirus  —  Threat Blocked",
+            "ST-AntiVirus  —  Threat Blocked",
             f"Automatically blocked: {threat.category}\n{threat.path}",
             QSystemTrayIcon.Critical, 5000,
         )
