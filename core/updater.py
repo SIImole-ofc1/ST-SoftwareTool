@@ -11,7 +11,7 @@ import urllib.request
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-APP_VERSION = "1.0.18"
+APP_VERSION = "1.0.19"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
 
 
