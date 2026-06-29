@@ -150,7 +150,7 @@ class AntivirusView(QWidget):
         header.addWidget(logo_lbl)
 
         title_col = QVBoxLayout()
-        title_lbl = QLabel('ST AntiVirus')
+        title_lbl = QLabel('ST-AntiVirus')
         title_lbl.setFont(QFont('Segoe UI', 16, QFont.Bold))
         sub_lbl = QLabel(
             'Smart heuristic scan  —  PE entropy · injection APIs · keyloggers · '
@@ -319,7 +319,7 @@ class AntivirusView(QWidget):
                 path='All scanned locations',
                 reason='No threats detected — your system appears clean',
                 detail=(
-                    'ST AntiVirus checked files, running processes, registry '
+                    'ST-AntiVirus checked files, running processes, registry '
                     'startup entries, scheduled tasks, Windows services, and '
                     'the hosts file.\n\nNo threats were found.'
                 ),
