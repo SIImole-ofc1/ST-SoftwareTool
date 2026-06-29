@@ -162,7 +162,7 @@ Write-Host "  Live: $($asset.browser_download_url)" -ForegroundColor Green
 Write-Host "`n[5/5] Committing and pushing..." -ForegroundColor Yellow
 Set-Location $root
 git add core/updater.py ST-Setup.iss index.html release.ps1
-git add core/commands.py ui/terminal_widget.py core/antivirus_manager.py
+git add core/commands.py ui/terminal_widget.py core/antivirus_manager.py ui/main_window.py
 git add tools/yt-dlp.exe 2>$null
 git add .gitignore 2>$null
 git commit -m "Release v$Version"
