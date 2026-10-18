@@ -3,18 +3,36 @@ name: Deploy to Cloudflare Pages
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Deploy ONLY website files — never upload the Python app / installers
+      - name: Prepare website publish folder
+        run: |
+          set -e
+          rm -rf publish
+          mkdir -p publish/assets publish/privacy publish/download
+          cp index.html style.css app.js publish/
+          cp -r assets/. publish/assets/
+          cp -r privacy/. publish/privacy/
+          cp -r download/. publish/download/
+          # Guard: privacy page must exist or the deploy is wrong
+          test -f publish/privacy/index.html
+          echo "Publish contents:"
+          find publish -type f | sort
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: st-softwaretool
-          directory: .
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: pages deploy publish --project-name=st-softwaretool --branch=main --commit-dirty=true

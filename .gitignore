@@ -31,3 +31,4 @@ dist/
 dist_nuitka/
 dist_nuitka_pm/
 obf_dist/
+publish/
