@@ -161,3 +161,38 @@ document.querySelectorAll('#monitor').forEach(el => observer.observe(el));
 window.addEventListener('load', () => {
     setTimeout(nextSession, 600);
 });
+
+/* ── Privacy / Terms consent popup ───────────── */
+(function initPrivacyConsent() {
+    const KEY = 'st_privacy_agreed';
+    const modal = document.getElementById('privacy-modal');
+    if (!modal) return;
+
+    let agreed = false;
+    try { agreed = localStorage.getItem(KEY) === '1'; } catch (e) {}
+
+    if (agreed) {
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        return;
+    }
+
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('privacy-locked');
+
+    const agreeBtn = document.getElementById('privacy-agree');
+    if (agreeBtn) {
+        agreeBtn.addEventListener('click', () => {
+            try { localStorage.setItem(KEY, '1'); } catch (e) {}
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('privacy-locked');
+        });
+    }
+
+    // Focus primary action for keyboard / accessibility
+    setTimeout(() => {
+        if (agreeBtn) agreeBtn.focus();
+    }, 50);
+})();
