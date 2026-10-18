@@ -457,6 +457,9 @@ section + section {
     background: var(--gray);
     padding: 14px 16px;
 }
+.feature-card-wide {
+    grid-column: 1 / -1;
+}
 .feature-card h3 {
     font-size: 13px;
     font-weight: bold;
@@ -537,6 +540,8 @@ section + section {
 }
 .download-box {
     min-width: 280px;
+    flex: 1 1 320px;
+    max-width: 100%;
     padding: 18px 20px;
 }
 .download-box h3 { font-size: 14px; font-weight: bold; margin-bottom: 10px; }
@@ -560,6 +565,61 @@ section + section {
 .about-text h3 { font-size: 13px; font-weight: bold; margin-bottom: 6px; }
 .about-text p { font-size: 12px; line-height: 1.8; color: #222; margin-bottom: 10px; }
 
+/* ── Hero brand (terminal header) ──────────────── */
+.hero-brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 0 16px;
+}
+.hero-brand-logo {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 8px #4488ff);
+}
+.hero-brand-title {
+    color: #ffff00;
+    font-weight: bold;
+    font-size: 15px;
+    letter-spacing: 1px;
+}
+.hero-brand-sub {
+    color: #c0c0c0;
+    font-size: 12px;
+    margin-top: 3px;
+}
+.hero-brand-tag {
+    color: #00ffff;
+    font-size: 11px;
+    margin-top: 6px;
+}
+
+/* ── Feature split (VPN two-col) ───────────────── */
+.feature-split {
+    padding: 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+/* ── Command table wrap ────────────────────────── */
+.cmd-table-wrap {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+
+/* ── Download side column ──────────────────────── */
+.download-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 220px;
+    flex: 1;
+}
+
 /* ── Scrollbar Win95 ───────────────────────────── */
 ::-webkit-scrollbar { width: 16px; }
 ::-webkit-scrollbar-track { background: var(--gray); }
@@ -578,4 +638,325 @@ section + section {
     border-bottom: 2px solid var(--dark-gray);
     height: 16px;
     display: block;
+}
+
+/* ══════════════════════════════════════════════
+   RESPONSIVE — Tablet & Mobile
+   ══════════════════════════════════════════════ */
+
+img, video, svg { max-width: 100%; height: auto; }
+
+.title-bar-left {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.main-window,
+.desktop,
+section,
+.download-inner,
+.about-inner,
+.features-grid,
+.commands-layout,
+.monitor-grid {
+    min-width: 0;
+}
+
+/* Tablet (and small laptops) */
+@media (max-width: 960px) {
+    .desktop {
+        padding: 10px 10px 52px;
+    }
+
+    section {
+        padding: 22px 16px;
+    }
+
+    #hero {
+        grid-template-columns: 1fr;
+        gap: 18px;
+        min-height: 0;
+    }
+
+    .hero-terminal { min-height: 240px; }
+
+    .features-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    .commands-layout {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+
+    .monitor-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .feature-split {
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+
+    .download-inner {
+        gap: 16px;
+    }
+
+    .download-box,
+    .download-side {
+        min-width: 0;
+        width: 100%;
+        flex: 1 1 100%;
+    }
+
+    .about-inner {
+        gap: 16px;
+    }
+
+    .about-logo-box {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .nav-menu {
+        gap: 2px;
+    }
+
+    .nav-menu a {
+        padding: 6px 8px;
+    }
+}
+
+/* Phones / narrow tablets */
+@media (max-width: 640px) {
+    body {
+        font-size: 13px;
+        padding-bottom: 44px;
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+    }
+
+    .desktop {
+        padding: 6px 6px 56px;
+    }
+
+    section {
+        padding: 16px 12px;
+    }
+
+    .title-bar {
+        font-size: 12px;
+        padding: 4px 4px 4px 5px;
+    }
+
+    .title-bar-btns {
+        display: none;
+    }
+
+    .nav-menu {
+        position: sticky;
+        top: 0;
+        padding: 4px;
+        gap: 0;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+
+    .nav-logo {
+        flex-shrink: 0;
+        padding: 4px 8px 4px 4px;
+        margin-right: 2px;
+        font-size: 12px;
+    }
+
+    .nav-logo span,
+    .nav-logo {
+        white-space: nowrap;
+    }
+
+    .nav-menu a {
+        flex-shrink: 0;
+        padding: 8px 10px;
+        font-size: 12px;
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    #hero {
+        gap: 14px;
+    }
+
+    .hero-terminal {
+        min-height: 0;
+        font-size: 12px;
+        padding: 12px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .hero-brand {
+        gap: 10px;
+        padding-bottom: 12px;
+    }
+
+    .hero-brand-logo {
+        width: 52px;
+        height: 52px;
+    }
+
+    .hero-brand-title {
+        font-size: 13px;
+        letter-spacing: 0.5px;
+    }
+
+    .hero-brand-sub,
+    .hero-brand-tag {
+        font-size: 11px;
+    }
+
+    .hero-desc h1 {
+        font-size: 18px;
+    }
+
+    .hero-desc .btn-row,
+    .btn-row {
+        gap: 8px;
+    }
+
+    .btn {
+        padding: 10px 16px;
+        min-width: 0;
+        flex: 1 1 auto;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .features-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .feature-card-wide {
+        grid-column: auto;
+    }
+
+    .feature-split {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .cmd-terminal {
+        min-height: 200px;
+        font-size: 11px;
+        padding: 12px;
+        overflow-x: auto;
+    }
+
+    .cmd-table {
+        font-size: 11px;
+        min-width: 420px;
+    }
+
+    .cmd-table th,
+    .cmd-table td {
+        padding: 6px 8px;
+    }
+
+    .monitor-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .status-bar {
+        flex-wrap: wrap;
+        gap: 3px;
+    }
+
+    .status-panel {
+        font-size: 11px;
+        padding: 2px 6px;
+    }
+
+    .taskbar {
+        height: 36px;
+        padding: 0 4px;
+    }
+
+    .taskbar-item {
+        min-width: 0;
+        max-width: 42vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 0 8px;
+        font-size: 11px;
+    }
+
+    .start-btn span {
+        display: none;
+    }
+
+    .start-btn {
+        padding: 2px 6px;
+        min-width: 36px;
+        justify-content: center;
+    }
+
+    .taskbar-clock {
+        min-width: 56px;
+        padding: 2px 6px;
+        font-size: 11px;
+    }
+
+    .group-box {
+        padding: 16px 10px 12px;
+    }
+
+    .download-box {
+        min-width: 0;
+        padding: 0;
+    }
+
+    .about-text {
+        min-width: 0;
+    }
+
+    /* Prefer touch scrolling inside terminals / tables */
+    .terminal {
+        overflow-x: auto;
+        word-break: break-word;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+    .nav-logo {
+        font-size: 0;
+        gap: 0;
+        padding: 4px 6px;
+    }
+
+    .nav-logo img {
+        margin: 0;
+    }
+
+    .hero-brand {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .btn-row .btn {
+        width: 100%;
+    }
 }
