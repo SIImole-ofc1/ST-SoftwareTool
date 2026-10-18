@@ -1052,6 +1052,38 @@ body.privacy-locked {
 }
 
 /* Privacy policy page */
+.privacy-page .taskbar-home-btn {
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+    font-weight: bold;
+}
+.privacy-page .nav-return {
+    margin-left: auto;
+    font-weight: bold;
+    color: var(--blue) !important;
+}
+.privacy-page .nav-return:hover {
+    background: var(--blue) !important;
+    color: var(--white) !important;
+}
+
+.privacy-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--gray);
+    border-bottom: 1px solid var(--dark-gray);
+    position: sticky;
+    top: 0;
+    z-index: 90;
+}
+.privacy-return-btn {
+    font-weight: bold;
+}
+
 .privacy-section {
     padding: 22px 24px 28px;
 }
@@ -1062,41 +1094,239 @@ body.privacy-locked {
     margin-bottom: 16px;
 }
 .privacy-actions-bottom {
-    margin-top: 16px;
+    margin-top: 20px;
     margin-bottom: 0;
+    justify-content: flex-start;
 }
-.privacy-doc {
-    overflow: hidden;
+
+.privacy-hero {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 18px;
+    margin-bottom: 22px;
+    align-items: start;
 }
-.privacy-body {
-    padding: 18px 20px 22px;
-    background: #f0f0f0;
-    border-top: 2px solid var(--dark-gray);
+.privacy-hero-term {
+    min-height: 0;
+    padding: 14px 16px;
 }
-.privacy-body h1 {
-    font-size: 18px;
-    margin-bottom: 16px;
+.privacy-hero-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
 }
-.privacy-body h2 {
-    font-size: 14px;
-    margin: 20px 0 8px;
-    color: var(--blue);
+.privacy-index-card { overflow: hidden; }
+.privacy-index-body {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
-.privacy-body p,
-.privacy-body li {
+.privacy-index-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    text-decoration: none;
+    color: var(--black);
+    font-size: 12px;
+    line-height: 1.35;
+    border: 1px solid transparent;
+}
+.privacy-index-link:hover {
+    background: var(--blue);
+    color: var(--white);
+}
+.privacy-index-link:hover small { color: #c8d8ff; }
+.privacy-index-link small {
+    color: #555;
+    font-size: 11px;
+}
+
+.privacy-badge-box { margin-top: 0; }
+.privacy-badge-list {
+    list-style: none;
+    font-size: 12px;
+    line-height: 2;
+    margin: 0;
+}
+.privacy-badge-list li::before {
+    content: "✓  ";
+    color: #006000;
+    font-weight: bold;
+}
+
+/* Pixel-style section icons */
+.privacy-ico {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: inline-block;
+    image-rendering: pixelated;
+    border: 1px solid var(--black);
+    box-shadow:
+        inset 1px 1px 0 var(--white),
+        inset -1px -1px 0 var(--dark-gray);
+}
+.privacy-ico-sm {
+    width: 16px;
+    height: 16px;
+}
+.privacy-ico-data {
+    background:
+        linear-gradient(90deg, #1084d0 0 40%, transparent 40%),
+        linear-gradient(#000080 0 100%);
+    background-size: 100% 4px, 100% 100%;
+    background-repeat: repeat-y, no-repeat;
+}
+.privacy-ico-vpn {
+    background:
+        radial-gradient(circle at 30% 50%, #00ff00 0 18%, transparent 19%),
+        radial-gradient(circle at 50% 50%, #ffff00 0 18%, transparent 19%),
+        radial-gradient(circle at 70% 50%, #ff6666 0 18%, transparent 19%),
+        #000080;
+}
+.privacy-ico-control {
+    background:
+        linear-gradient(135deg, #c0c0c0 40%, #000080 40% 60%, #c0c0c0 60%);
+}
+.privacy-ico-ip {
+    background:
+        repeating-linear-gradient(45deg, #000080 0 4px, #1084d0 4px 8px);
+}
+.privacy-ico-mail {
+    background:
+        linear-gradient(180deg, #ffffff 0 35%, #000080 35% 100%);
+    position: relative;
+}
+.privacy-ico-mail::after {
+    content: "";
+    display: block;
+    width: 100%;
+    height: 100%;
+    background:
+        linear-gradient(135deg, transparent 48%, #c0c0c0 48% 52%, transparent 52%),
+        linear-gradient(225deg, transparent 48%, #c0c0c0 48% 52%, transparent 52%);
+}
+
+.privacy-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.privacy-card { overflow: hidden; scroll-margin-top: 64px; }
+.privacy-card-body {
+    padding: 14px 16px 16px;
+    background: #ececec;
+    border-top: 1px solid var(--dark-gray);
+}
+.privacy-card-body p,
+.privacy-card-body li {
     font-size: 13px;
     line-height: 1.8;
     color: #111;
 }
-.privacy-body p { margin-bottom: 10px; }
-.privacy-body ul {
-    margin: 0 0 12px 20px;
+.privacy-card-body p { margin-bottom: 10px; }
+.privacy-card-body ul { margin: 0 0 12px 20px; }
+.privacy-card-body a { color: var(--blue); }
+
+.privacy-vpn-diagram {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px;
+    margin-bottom: 14px;
+    background: #000080;
+    border-top: 2px solid var(--dark-gray);
+    border-left: 2px solid var(--dark-gray);
+    border-right: 2px solid var(--white);
+    border-bottom: 2px solid var(--white);
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
 }
-.privacy-body a { color: var(--blue); }
+.vpn-node {
+    background: var(--gray);
+    color: var(--black);
+    padding: 6px 10px;
+    border-top: 1px solid var(--white);
+    border-left: 1px solid var(--white);
+    border-right: 1px solid var(--black);
+    border-bottom: 1px solid var(--black);
+    font-weight: bold;
+}
+.vpn-guard { background: #90ee90; }
+.vpn-mid { background: #ffff99; }
+.vpn-exit { background: #ffb6b6; }
+.vpn-arrow { color: #ffff00; font-size: 16px; font-weight: bold; }
+
+.privacy-control-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+}
+.privacy-control-item {
+    background: var(--gray);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.privacy-control-item strong {
+    font-size: 12px;
+    color: var(--blue);
+}
+
+.privacy-law-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+}
+.privacy-law-item { overflow: hidden; }
+.privacy-law-body {
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.65;
+    background: #f4f4f4;
+}
+
+.privacy-contact-panel {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+.privacy-contact-logo {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
 .privacy-copy {
-    margin-top: 18px;
+    margin-top: 14px;
     font-size: 12px;
     color: #555;
+}
+
+@media (max-width: 960px) {
+    .privacy-hero {
+        grid-template-columns: 1fr;
+    }
+    .privacy-control-grid {
+        grid-template-columns: 1fr;
+    }
+    .privacy-law-grid {
+        grid-template-columns: 1fr;
+    }
+    .privacy-page .nav-return {
+        margin-left: 0;
+    }
 }
 
 @media (max-width: 640px) {
@@ -1126,19 +1356,35 @@ body.privacy-locked {
     .privacy-section {
         padding: 14px 12px 20px;
     }
-    .privacy-body {
-        padding: 14px 12px 18px;
-    }
-    .privacy-body h1 { font-size: 16px; }
-    .privacy-actions {
+    .privacy-toolbar {
+        padding: 8px 10px;
         flex-direction: column;
         align-items: stretch;
     }
+    .privacy-toolbar .btn,
     .privacy-actions .btn {
         width: 100%;
         min-height: 40px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+    }
+    .privacy-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .privacy-card-body {
+        padding: 12px;
+    }
+    .privacy-vpn-diagram {
+        gap: 4px;
+        padding: 10px 6px;
+    }
+    .vpn-node {
+        padding: 5px 7px;
+        font-size: 10px;
+    }
+    .taskbar-home-btn {
+        display: none;
     }
 }
