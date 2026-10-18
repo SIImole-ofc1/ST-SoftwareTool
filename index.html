@@ -51,6 +51,7 @@
         <a href="#monitor">Monitor</a>
         <a href="#download">Download</a>
         <a href="#about">About</a>
+        <a href="privacy/">Privacy &amp; Terms</a>
     </nav>
 
     <section id="hero">
@@ -505,6 +506,9 @@
                         Take complete control of your PC system and easily uncover hidden files.
                         Secure your data and experience full control now.
                     </p>
+                    <div class="btn-row" style="margin-top:12px">
+                        <a href="privacy/" class="btn">Privacy Policy &amp; Terms of Use</a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -512,10 +516,47 @@
 
     <div class="status-bar">
         <div class="status-panel">ST-SoftwareTool [AllRightsReserved]</div>
+        <div class="status-panel"><a href="privacy/" class="status-link">Privacy &amp; Terms</a></div>
         <div class="status-panel" style="margin-left:auto" id="status-date"></div>
     </div>
 
 </div>
+</div>
+
+<!-- Privacy / Terms consent popup -->
+<div id="privacy-modal" class="privacy-modal" hidden aria-hidden="true">
+    <div class="privacy-modal-backdrop"></div>
+    <div class="privacy-modal-window window" role="dialog" aria-modal="true" aria-labelledby="privacy-modal-title">
+        <div class="title-bar">
+            <div class="title-bar-left">
+                <img src="assets/STsoftwareterminalLOGO.png.png" alt="" class="title-icon">
+                <span id="privacy-modal-title">Privacy Policy &amp; Terms of Use</span>
+            </div>
+        </div>
+        <div class="privacy-modal-body">
+            <p class="privacy-modal-intro">
+                Please read this summary before using the ST-SoftwareTool website.
+                You must agree to continue, or open the full policy to read everything.
+            </p>
+            <div class="privacy-modal-scroll group-box">
+                <div class="group-box-title">Summary</div>
+                <ol class="privacy-modal-list">
+                    <li><strong>Your Data:</strong> SIImole does not collect data on our servers. App data stays on your device only.</li>
+                    <li><strong>ST-VPN:</strong> Routes through Tor with no account, logs, or fees. Prefer HTTPS while connected.</li>
+                    <li><strong>Your Control:</strong> View, back up, or delete local data anytime. No sign-up required.</li>
+                    <li><strong>Intellectual Property:</strong> SIImole code, designs, and branding are protected. Copying, reverse-engineering, or commercial misuse without permission is not allowed.</li>
+                </ol>
+                <p class="privacy-modal-contact">
+                    Questions: <a href="mailto:siimole.official@gmail.com">siimole.official@gmail.com</a><br>
+                    &copy; 2026 SIImole. All rights reserved.
+                </p>
+            </div>
+            <div class="privacy-modal-actions">
+                <a href="privacy/" class="btn" id="privacy-read-full">Read full Privacy &amp; Terms</a>
+                <button type="button" class="btn btn-primary" id="privacy-agree">I Agree</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="app.js"></script>
