@@ -8,10 +8,10 @@
 <link rel="icon" type="image/png" href="../assets/STsoftwareterminalLOGO.png.png">
 <link rel="stylesheet" href="../style.css">
 </head>
-<body>
+<body class="privacy-page">
 
 <div class="taskbar">
-    <a href="../" class="start-btn" style="text-decoration:none;color:inherit">
+    <a href="../" class="start-btn" style="text-decoration:none;color:inherit" title="Return to main page">
         <img src="../assets/STsoftwareterminalLOGO.png.png" alt="ST">
         <span>Start</span>
     </a>
@@ -20,6 +20,9 @@
         <img src="../assets/STsoftwareterminalLOGO.png.png" alt="">
         Privacy &amp; Terms
     </div>
+    <a href="../" class="taskbar-item taskbar-home-btn" title="Return to main page">
+        &#9664; Main Page
+    </a>
     <div class="taskbar-right">
         <div class="taskbar-clock" id="clock">00:00</div>
     </div>
@@ -36,7 +39,7 @@
         <div class="title-bar-btns">
             <div class="tb-btn">_</div>
             <div class="tb-btn">&#9633;</div>
-            <div class="tb-btn">&#10005;</div>
+            <a href="../" class="tb-btn" title="Return to main page" style="text-decoration:none;color:inherit">&#10005;</a>
         </div>
     </div>
 
@@ -49,112 +52,266 @@
         <a href="../#features">Features</a>
         <a href="../#download">Download</a>
         <a href="./" class="active">Privacy &amp; Terms</a>
+        <a href="../" class="nav-return">&#9664; Return to Main Page</a>
     </nav>
 
-    <section id="privacy" class="privacy-section">
-        <div class="privacy-actions">
-            <a href="../" class="btn">Back to Home</a>
-            <button type="button" class="btn btn-primary" id="privacy-agree-btn">I Agree &amp; Continue</button>
-        </div>
+    <!-- Sticky return bar -->
+    <div class="privacy-toolbar">
+        <a href="../" class="btn btn-primary privacy-return-btn">&#9664; Return to Main Page</a>
+        <button type="button" class="btn" id="privacy-agree-btn">I Agree &amp; Continue</button>
+    </div>
 
-        <article class="privacy-doc window">
-            <div class="title-bar">
-                <div class="title-bar-left">
-                    <img src="../assets/STsoftwareterminalLOGO.png.png" alt="" class="title-icon">
-                    Privacy Policy &amp; Terms of Use - SIImole
+    <section id="privacy" class="privacy-section">
+
+        <!-- Graphical hero -->
+        <div class="privacy-hero">
+            <div class="privacy-hero-terminal window">
+                <div class="title-bar">
+                    <div class="title-bar-left">
+                        <img src="../assets/STsoftwareterminalLOGO.png.png" alt="" class="title-icon">
+                        Legal Documents - SIImole
+                    </div>
+                    <div class="title-bar-btns">
+                        <div class="tb-btn">_</div>
+                        <div class="tb-btn">&#9633;</div>
+                        <div class="tb-btn">&#10005;</div>
+                    </div>
+                </div>
+                <div class="terminal privacy-hero-term">
+                    <div class="hero-brand">
+                        <img src="../assets/STsoftwareterminalLOGO.png.png" alt="ST" class="hero-brand-logo">
+                        <div>
+                            <div class="hero-brand-title">Privacy Policy &amp; Terms of Use</div>
+                            <div class="hero-brand-sub">SIImole &nbsp;&#183;&nbsp; ST-SoftwareTool</div>
+                            <div class="hero-brand-tag">Local-only &nbsp;&#183;&nbsp; No telemetry &nbsp;&#183;&nbsp; No accounts</div>
+                        </div>
+                    </div>
+                    <div class="t-prompt">&gt;_/legal:show</div>
+                    <div class="t-info">Loading policy sections…</div>
+                    <div class="t-success">4 sections ready. Scroll or use the index on the right.</div>
+                    <div class="t-dim">──────────────────────────────────────</div>
+                    <div class="t-prompt">&gt;_/&nbsp;<span class="cursor"></span></div>
+                </div>
+                <div class="status-bar">
+                    <div class="status-panel">Document Viewer</div>
+                    <div class="status-panel" style="margin-left:auto">Read-only</div>
                 </div>
             </div>
-            <div class="privacy-body">
-                <h1>Privacy Policy &amp; Terms of Use - SIImole</h1>
 
-                <h2>1. Your Data</h2>
-                <p>
-                    SIImole does not collect any data on servers or networks that we own or operate.
-                    Everything the software generates - chat history, settings, cached files, logs -
-                    is created and stored only on your own device, in the location where the application
-                    is installed or configured to store its data. Nothing is sent to us, because we have
-                    no systems set up to receive it. What happens on your device stays on your device.
-                </p>
-                <p>
-                    Since we do not collect or handle any personal data, the traditional Data controller
-                    rules under GDPR do not apply to us. That said, if you ever have a question or concern
-                    about how the software handles your data, feel free to reach out at
-                    <a href="mailto:siimole.official@gmail.com">siimole.official@gmail.com</a>.
-                </p>
+            <div class="privacy-hero-side">
+                <div class="window privacy-index-card">
+                    <div class="title-bar"><div class="title-bar-left">Quick Index</div></div>
+                    <div class="privacy-index-body">
+                        <a href="#sec-data" class="privacy-index-link">
+                            <span class="privacy-ico privacy-ico-data" aria-hidden="true"></span>
+                            <span><strong>1. Your Data</strong><br><small>Local storage only</small></span>
+                        </a>
+                        <a href="#sec-vpn" class="privacy-index-link">
+                            <span class="privacy-ico privacy-ico-vpn" aria-hidden="true"></span>
+                            <span><strong>2. ST-VPN</strong><br><small>Tor · No logs</small></span>
+                        </a>
+                        <a href="#sec-control" class="privacy-index-link">
+                            <span class="privacy-ico privacy-ico-control" aria-hidden="true"></span>
+                            <span><strong>3. Your Control</strong><br><small>Delete anytime</small></span>
+                        </a>
+                        <a href="#sec-ip" class="privacy-index-link">
+                            <span class="privacy-ico privacy-ico-ip" aria-hidden="true"></span>
+                            <span><strong>4. Intellectual Property</strong><br><small>Copyright protected</small></span>
+                        </a>
+                        <a href="#sec-contact" class="privacy-index-link">
+                            <span class="privacy-ico privacy-ico-mail" aria-hidden="true"></span>
+                            <span><strong>Contact</strong><br><small>siimole.official@gmail.com</small></span>
+                        </a>
+                    </div>
+                </div>
 
-                <h2>2. ST-VPN (Powered by Tor)</h2>
-                <p>
-                    ST-VPN routes your connection through three independent Tor relays (Guard, Middle, Exit),
-                    masking both your IPv4 and IPv6 address from every site you visit. A built-in stealth mode
-                    disguises your traffic using obfs4 or Snowflake, helping you stay connected even behind
-                    firewalls or VPN blockers. You can rotate to a new circuit and exit IP at any time with
-                    the &quot;New Identity&quot; button, and a live panel displays your real IP alongside your
-                    protected Tor IP so you can confirm you're covered before you browse.
-                </p>
-                <p>
-                    ST-VPN requires no account, no third-party server, and no monthly fee - it runs entirely
-                    on the free, public Tor network. We keep no logs and have no visibility into your traffic.
-                </p>
-                <p>
-                    Please note: as with any service built on the public Tor network, the final relay in the
-                    circuit (the exit node) may, in rare cases, have visibility into unencrypted traffic.
-                    This is a well-documented characteristic of how Tor operates, not a limitation specific
-                    to ST-VPN. For the strongest protection, we recommend using HTTPS-secured websites while
-                    ST-VPN is active.
-                </p>
-                <p>
-                    We do not use any other third-party services, analytics, or tracking tools.
-                    No ads, no telemetry, no background data collection.
-                </p>
-
-                <h2>3. Your Control Over Your Data</h2>
-                <p>Because everything is stored locally, you're always in full control:</p>
-                <ul>
-                    <li>You can view, back up, or delete your data at any time from wherever the application stores its files on your device.</li>
-                    <li>Uninstalling the software and removing its associated data removes all traces of it from your device.</li>
-                    <li>No account or personal sign-up is required to use SIImole.</li>
-                </ul>
-
-                <h2>4. Intellectual Property</h2>
-                <p>
-                    All source code, designs, branding, and other materials that make up SIImole belong to
-                    the SIImole Team and are protected under copyright law.
-                </p>
-                <p>Without our written permission, it is not permitted to:</p>
-                <ul>
-                    <li>Copy, access, reverse-engineer, or redistribute SIImole's code or Assets.</li>
-                    <li>Use SIImole's code, name, or branding for commercial purposes or financial gain.</li>
-                    <li>Use SIImole's code or materials to create or support harmful, illegal, or malicious software.</li>
-                </ul>
-                <p>Depending on jurisdiction, such actions may violate copyright or computer access laws, including:</p>
-                <ul>
-                    <li><strong>Germany:</strong> the German Copyright Act (Urheberrechtsgesetz) and Section 202a of the German Criminal Code (unauthorized data access).</li>
-                    <li><strong>United States:</strong> the U.S. Copyright Act and the Computer Fraud and Abuse Act.</li>
-                    <li><strong>European Union:</strong> EU Directive 2001/29/EC on copyright and, where relevant, the EU Trade Secrets Directive (2016/943).</li>
-                    <li><strong>Internationally:</strong> the Berne Convention, followed by most countries, including Germany and the United States.</li>
-                </ul>
-                <p>
-                    This section is provided for general informational purposes and does not constitute legal advice!
-                    We reserve the right to pursue appropriate action against violations under applicable law!
-                </p>
-
-                <h2>Contact</h2>
-                <p>
-                    For questions, permissions, or to report misuse of the work we do:<br>
-                    <a href="mailto:siimole.official@gmail.com">siimole.official@gmail.com</a>
-                </p>
-                <p class="privacy-copy">&copy; 2026 SIImole. All rights reserved.</p>
+                <div class="group-box raised privacy-badge-box">
+                    <div class="group-box-title">At a glance</div>
+                    <ul class="privacy-badge-list">
+                        <li>No server-side data collection</li>
+                        <li>No analytics or ads</li>
+                        <li>No account required</li>
+                        <li>Tor VPN · free &amp; local</li>
+                    </ul>
+                </div>
             </div>
-        </article>
+        </div>
+
+        <!-- Section cards -->
+        <div class="privacy-cards">
+
+            <article id="sec-data" class="privacy-card window">
+                <div class="title-bar">
+                    <div class="title-bar-left">
+                        <span class="privacy-ico privacy-ico-data privacy-ico-sm" aria-hidden="true"></span>
+                        1. Your Data
+                    </div>
+                </div>
+                <div class="privacy-card-body">
+                    <p>
+                        SIImole does not collect any data on servers or networks that we own or operate.
+                        Everything the software generates - chat history, settings, cached files, logs -
+                        is created and stored only on your own device, in the location where the application
+                        is installed or configured to store its data. Nothing is sent to us, because we have
+                        no systems set up to receive it. What happens on your device stays on your device.
+                    </p>
+                    <p>
+                        Since we do not collect or handle any personal data, the traditional Data controller
+                        rules under GDPR do not apply to us. That said, if you ever have a question or concern
+                        about how the software handles your data, feel free to reach out at
+                        <a href="mailto:siimole.official@gmail.com">siimole.official@gmail.com</a>.
+                    </p>
+                </div>
+            </article>
+
+            <article id="sec-vpn" class="privacy-card window">
+                <div class="title-bar">
+                    <div class="title-bar-left">
+                        <span class="privacy-ico privacy-ico-vpn privacy-ico-sm" aria-hidden="true"></span>
+                        2. ST-VPN (Powered by Tor)
+                    </div>
+                </div>
+                <div class="privacy-card-body">
+                    <div class="privacy-vpn-diagram" aria-hidden="true">
+                        <div class="vpn-node">You</div>
+                        <div class="vpn-arrow">&#8594;</div>
+                        <div class="vpn-node vpn-guard">Guard</div>
+                        <div class="vpn-arrow">&#8594;</div>
+                        <div class="vpn-node vpn-mid">Middle</div>
+                        <div class="vpn-arrow">&#8594;</div>
+                        <div class="vpn-node vpn-exit">Exit</div>
+                        <div class="vpn-arrow">&#8594;</div>
+                        <div class="vpn-node">Web</div>
+                    </div>
+                    <p>
+                        ST-VPN routes your connection through three independent Tor relays (Guard, Middle, Exit),
+                        masking both your IPv4 and IPv6 address from every site you visit. A built-in stealth mode
+                        disguises your traffic using obfs4 or Snowflake, helping you stay connected even behind
+                        firewalls or VPN blockers. You can rotate to a new circuit and exit IP at any time with
+                        the &quot;New Identity&quot; button, and a live panel displays your real IP alongside your
+                        protected Tor IP so you can confirm you're covered before you browse.
+                    </p>
+                    <p>
+                        ST-VPN requires no account, no third-party server, and no monthly fee - it runs entirely
+                        on the free, public Tor network. We keep no logs and have no visibility into your traffic.
+                    </p>
+                    <div class="group-box" style="margin-top:12px">
+                        <div class="group-box-title">Important note</div>
+                        <p style="margin:0;font-size:12px;line-height:1.7">
+                            As with any service built on the public Tor network, the final relay in the
+                            circuit (the exit node) may, in rare cases, have visibility into unencrypted traffic.
+                            This is a well-documented characteristic of how Tor operates, not a limitation specific
+                            to ST-VPN. For the strongest protection, we recommend using HTTPS-secured websites while
+                            ST-VPN is active.
+                        </p>
+                    </div>
+                    <p style="margin-top:12px">
+                        We do not use any other third-party services, analytics, or tracking tools.
+                        No ads, no telemetry, no background data collection.
+                    </p>
+                </div>
+            </article>
+
+            <article id="sec-control" class="privacy-card window">
+                <div class="title-bar">
+                    <div class="title-bar-left">
+                        <span class="privacy-ico privacy-ico-control privacy-ico-sm" aria-hidden="true"></span>
+                        3. Your Control Over Your Data
+                    </div>
+                </div>
+                <div class="privacy-card-body">
+                    <p>Because everything is stored locally, you're always in full control:</p>
+                    <div class="privacy-control-grid">
+                        <div class="privacy-control-item raised">
+                            <strong>View / Backup</strong>
+                            <span>Access or copy your files anytime from the app data folder on your device.</span>
+                        </div>
+                        <div class="privacy-control-item raised">
+                            <strong>Delete / Uninstall</strong>
+                            <span>Removing the software and its data clears all traces from your device.</span>
+                        </div>
+                        <div class="privacy-control-item raised">
+                            <strong>No sign-up</strong>
+                            <span>No account or personal registration is required to use SIImole.</span>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <article id="sec-ip" class="privacy-card window">
+                <div class="title-bar">
+                    <div class="title-bar-left">
+                        <span class="privacy-ico privacy-ico-ip privacy-ico-sm" aria-hidden="true"></span>
+                        4. Intellectual Property
+                    </div>
+                </div>
+                <div class="privacy-card-body">
+                    <p>
+                        All source code, designs, branding, and other materials that make up SIImole belong to
+                        the SIImole Team and are protected under copyright law.
+                    </p>
+                    <p>Without our written permission, it is not permitted to:</p>
+                    <ul>
+                        <li>Copy, access, reverse-engineer, or redistribute SIImole's code or Assets.</li>
+                        <li>Use SIImole's code, name, or branding for commercial purposes or financial gain.</li>
+                        <li>Use SIImole's code or materials to create or support harmful, illegal, or malicious software.</li>
+                    </ul>
+                    <p>Depending on jurisdiction, such actions may violate copyright or computer access laws, including:</p>
+                    <div class="privacy-law-grid">
+                        <div class="privacy-law-item window">
+                            <div class="title-bar" style="font-size:11px"><div class="title-bar-left">Germany</div></div>
+                            <div class="privacy-law-body">German Copyright Act (Urheberrechtsgesetz) and Section 202a of the German Criminal Code (unauthorized data access).</div>
+                        </div>
+                        <div class="privacy-law-item window">
+                            <div class="title-bar" style="font-size:11px"><div class="title-bar-left">United States</div></div>
+                            <div class="privacy-law-body">U.S. Copyright Act and the Computer Fraud and Abuse Act.</div>
+                        </div>
+                        <div class="privacy-law-item window">
+                            <div class="title-bar" style="font-size:11px"><div class="title-bar-left">European Union</div></div>
+                            <div class="privacy-law-body">EU Directive 2001/29/EC on copyright and, where relevant, the EU Trade Secrets Directive (2016/943).</div>
+                        </div>
+                        <div class="privacy-law-item window">
+                            <div class="title-bar" style="font-size:11px"><div class="title-bar-left">International</div></div>
+                            <div class="privacy-law-body">The Berne Convention, followed by most countries, including Germany and the United States.</div>
+                        </div>
+                    </div>
+                    <p style="margin-top:12px">
+                        This section is provided for general informational purposes and does not constitute legal advice!
+                        We reserve the right to pursue appropriate action against violations under applicable law!
+                    </p>
+                </div>
+            </article>
+
+            <article id="sec-contact" class="privacy-card window">
+                <div class="title-bar">
+                    <div class="title-bar-left">
+                        <span class="privacy-ico privacy-ico-mail privacy-ico-sm" aria-hidden="true"></span>
+                        Contact
+                    </div>
+                </div>
+                <div class="privacy-card-body privacy-contact-panel">
+                    <img src="../assets/STsoftwareterminalLOGO.png.png" alt="SIImole" class="privacy-contact-logo">
+                    <div>
+                        <p style="margin:0 0 8px">
+                            For questions, permissions, or to report misuse of the work we do:
+                        </p>
+                        <a href="mailto:siimole.official@gmail.com" class="btn btn-primary">siimole.official@gmail.com</a>
+                        <p class="privacy-copy">&copy; 2026 SIImole. All rights reserved.</p>
+                    </div>
+                </div>
+            </article>
+
+        </div>
 
         <div class="privacy-actions privacy-actions-bottom">
-            <a href="../" class="btn">Back to Home</a>
-            <button type="button" class="btn btn-primary" id="privacy-agree-btn-bottom">I Agree &amp; Continue</button>
+            <a href="../" class="btn btn-primary privacy-return-btn">&#9664; Return to Main Page</a>
+            <button type="button" class="btn" id="privacy-agree-btn-bottom">I Agree &amp; Continue</button>
         </div>
     </section>
 
     <div class="status-bar">
         <div class="status-panel">SIImole Privacy &amp; Terms</div>
+        <div class="status-panel"><a href="../" class="status-link">Return to Main Page</a></div>
         <div class="status-panel" style="margin-left:auto" id="status-date"></div>
     </div>
 
