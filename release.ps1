@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$root = "C:\ST"
+$root = $PSScriptRoot
 
 Write-Host "`n=== ST-SoftwareTool Release Script ===" -ForegroundColor Cyan
 Write-Host "Version: $Version`n" -ForegroundColor Cyan
