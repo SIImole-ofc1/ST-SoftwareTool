@@ -1,0 +1,36 @@
+[33mcommit 91cf6e3f02367e877fba82038e64e73302b96b79[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: SIImole-ofc1 <siimole.official.first@gmail.com>
+Date:   Thu Nov 5 21:10:46 2026 +0100
+
+    Update project
+
+ release.ps1 | 2 [32m+[m[31m-[m
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+[33mcommit 7fc512848b29e1b274c2ec22ed75c891555d130d[m
+Author: SIImole-ofc1 <makar.boss.makar@gmail.com>
+Date:   Sun Oct 18 16:35:11 2026 +0200
+
+    Fix Cloudflare deploy so the privacy page actually goes live.
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>
+
+ .github/workflows/deploy.yml | 28 [32m++++++++++++++++++++++[m[31m-----[m
+ .gitignore                   |  3 [32m++[m[31m-[m
+ index.html                   |  8 [32m++++[m[31m----[m
+ privacy/index.html           | 46 [32m++++++++++++++++++++++[m[31m----------------------[m
+ scripts/prepare-web.ps1      | 18 [32m+++++++++++++++++[m
+ wrangler.toml                |  3 [32m+++[m
+ 6 files changed, 73 insertions(+), 33 deletions(-)
+
+[33mcommit b3a3fd3de4452c29290b09aca90159321066b047[m
+Author: SIImole-ofc1 <makar.boss.makar@gmail.com>
+Date:   Sun Oct 18 16:29:30 2026 +0200
+
+    Give the privacy page a graphical Win95 layout and clear return button.
+    
+    Co-authored-by: Cursor <cursoragent@cursor.com>
+
+ privacy/index.html | 347 [32m++++++++++++++++++++++++++++++++++++++[m[31m---------------[m
+ style.css          | 298 [32m+++++++++++++++++++++++++++++++++++++++++[m[31m----[m
+ 2 files changed, 524 insertions(+), 121 deletions(-)

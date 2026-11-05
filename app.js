@@ -14,6 +14,31 @@ function updateClock() {
 setInterval(updateClock, 10000);
 updateClock();
 
+/* ── Footer date and public release version ─── */
+const statusDate = document.getElementById('status-date');
+if (statusDate) {
+    statusDate.textContent = new Date().toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
+}
+
+fetch('https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest', {
+    headers: { Accept: 'application/vnd.github.v3+json' }
+})
+    .then(response => {
+        if (!response.ok) throw new Error(`GitHub release request failed: ${response.status}`);
+        return response.json();
+    })
+    .then(release => {
+        if (!release.tag_name) return;
+        document.querySelectorAll('.gh-version').forEach(element => {
+            element.textContent = release.tag_name;
+        });
+    })
+    .catch(error => console.error('Unable to load the latest version:', error));
+
 /* ── Active nav on scroll ────────────────── */
 const sections = document.querySelectorAll('section[id]');
 const navLinks = document.querySelectorAll('.nav-menu a[href^="#"]');
