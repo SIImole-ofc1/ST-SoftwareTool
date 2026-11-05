@@ -560,24 +560,8 @@
 </div>
 
 <script src="app.js"></script>
-<script>
-    const sd = document.getElementById('status-date');
-    if (sd) sd.textContent = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'});
-</script>
-<script>
-fetch('https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest',
-      {headers:{Accept:'application/vnd.github.v3+json'}})
-  .then(r=>r.json())
-  .then(d=>{
-    var v = d.tag_name;
-    if (!v) return;
-    document.querySelectorAll('.gh-version').forEach(function(el){el.textContent=v;});
-  })
-  .catch(function(){});
-</script>
 </body>
 </html>
-
 
 
 

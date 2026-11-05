@@ -21,7 +21,7 @@ jobs:
           set -e
           rm -rf publish
           mkdir -p publish/assets publish/privacy publish/download
-          cp index.html style.css app.js publish/
+          cp index.html style.css app.js _headers publish/
           cp -r assets/. publish/assets/
           cp -r privacy/. publish/privacy/
           cp -r download/. publish/download/
