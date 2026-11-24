@@ -8,7 +8,7 @@ New-Item -ItemType Directory -Path $publish | Out-Null
 
 Copy-Item (Join-Path $root "index.html") $publish
 Copy-Item (Join-Path $root "style.css") $publish
-Copy-Item (Join-Path $root "app.js") $publish
+Get-ChildItem (Join-Path $root "*.js") | Copy-Item -Destination $publish
 Copy-Item (Join-Path $root "_headers") $publish
 Copy-Item (Join-Path $root "assets") (Join-Path $publish "assets") -Recurse
 Copy-Item (Join-Path $root "privacy") (Join-Path $publish "privacy") -Recurse

@@ -34,3 +34,6 @@ obf_dist/
 publish/.wrangler/
 .DS_Store
 publish/
+
+# Wrangler local cache
+.wrangler/
