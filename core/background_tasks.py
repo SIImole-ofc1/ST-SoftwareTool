@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
-from core.antivirus_manager import AntivirusManager, ThreatEntry
+from core.av_scanner import AntivirusManager, ThreatEntry
 
 
 class _ScanWorker(QThread):
@@ -23,7 +23,8 @@ class _ScanWorker(QThread):
         def on_threat(t: ThreatEntry) -> None:
             threats.append(t)
             self.threat_found.emit(t)
-            if self._auto_block and t.severity == 'red' and t.threat_type != 'green':
+            # Only auto-block what a detection engine confirmed - never heuristic guesses
+            if self._auto_block and t.confirmed and t.blockable:
                 ok, _ = self._mgr.block_threat(t)
                 if ok:
                     blocked_ref[0] += 1
