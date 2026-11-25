@@ -72,6 +72,14 @@ def main():
     app.setStyle("Fusion")
     if IS_WINDOWS:
         app.setFont(QFont("Segoe UI", 9))      # macOS/Linux keep their native UI font
+    else:
+        # The UI names Windows fonts; map them to native equivalents so the terminal
+        # and detail panes stay monospaced on macOS / Linux.
+        mono = "Menlo" if sys.platform == "darwin" else "DejaVu Sans Mono"
+        ui = "Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans"
+        for win_font in ("Consolas", "Courier New", "Lucida Console"):
+            QFont.insertSubstitutions(win_font, [mono, "Courier", "Monospace"])
+        QFont.insertSubstitutions("Segoe UI", [ui, "Arial"])
 
     if os.path.exists(_icon_path):
         app.setWindowIcon(QIcon(_icon_path))
