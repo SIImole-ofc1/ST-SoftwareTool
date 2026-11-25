@@ -503,18 +503,9 @@ window.addEventListener('load', () => {
 
 /* ── Privacy / Terms consent popup ───────────── */
 (function initPrivacyConsent() {
-    const KEY = 'st_privacy_agreed';
+    // Shown on every page load — agreement is intentionally not remembered.
     const modal = document.getElementById('privacy-modal');
     if (!modal) return;
-
-    let agreed = false;
-    try { agreed = localStorage.getItem(KEY) === '1'; } catch (e) {}
-
-    if (agreed) {
-        modal.hidden = true;
-        modal.setAttribute('aria-hidden', 'true');
-        return;
-    }
 
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
@@ -523,7 +514,6 @@ window.addEventListener('load', () => {
     const agreeBtn = document.getElementById('privacy-agree');
     if (agreeBtn) {
         agreeBtn.addEventListener('click', () => {
-            try { localStorage.setItem(KEY, '1'); } catch (e) {}
             modal.hidden = true;
             modal.setAttribute('aria-hidden', 'true');
             document.body.classList.remove('privacy-locked');
