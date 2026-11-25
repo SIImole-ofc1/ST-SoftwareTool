@@ -5,6 +5,8 @@ import json
 import os
 import tempfile
 import threading
+import time
+import urllib.error
 import urllib.request
 
 from PySide6.QtCore import QTimer, Qt
@@ -12,7 +14,10 @@ from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 APP_VERSION = "1.0.21"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
+_LATEST_JSON = "https://st-softwaretool.pages.dev/download/latest.json"  # fallback source
 _USER_AGENT = "ST-SoftwareTool-Updater"
+_TIMEOUT = 15  # seconds; generous so checks also work through the (slower) Tor VPN
+_LOG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "ST-SoftwareTool")
 
 # How often the running app re-checks for a new release (it can live in the tray for days).
 AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -32,25 +37,70 @@ def _ver(v: str) -> tuple:
         return (0,)
 
 
-def _fetch_latest() -> tuple[str, str]:
-    """Return (result, installer_url). result is a version string, _UPTODATE or _ERROR."""
+def _get_json(url: str) -> dict:
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT,
+                                               "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        return json.loads(resp.read().decode("utf-8-sig"))
+
+
+def _from_github() -> tuple[str, str]:
+    data = _get_json(_RELEASES_API)
+    ver = data.get("tag_name", "").lstrip("v")
+    url = next((a["browser_download_url"] for a in data.get("assets", [])
+                if a.get("name", "").lower().endswith(".exe")), "")
+    return ver, url
+
+
+def _from_website() -> tuple[str, str]:
+    data = _get_json(_LATEST_JSON)
+    return str(data.get("version", "")).lstrip("v"), data.get("url", "")
+
+
+def _describe(exc: Exception) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code == 403:
+            return "HTTP 403 (server refused the request, often a rate limit)"
+        return f"HTTP {exc.code} {exc.reason}"
+    if isinstance(exc, urllib.error.URLError):
+        return f"connection failed: {exc.reason}"
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _log(msg: str) -> None:
     try:
-        req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode())
-    except Exception:
-        return _ERROR, ""
+        os.makedirs(_LOG_DIR, exist_ok=True)
+        with open(os.path.join(_LOG_DIR, "update.log"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  v{APP_VERSION}  {msg}\n")
+    except OSError:
+        pass
 
-    remote_ver = data.get("tag_name", "").lstrip("v")
-    if not remote_ver:
-        return _ERROR, ""
-    if _ver(remote_ver) <= _ver(APP_VERSION):
-        return _UPTODATE, ""
 
-    for asset in data.get("assets", []):
-        if asset.get("name", "").lower().endswith(".exe"):
-            return remote_ver, asset["browser_download_url"]
-    return _ERROR, ""
+def _fetch_latest() -> tuple[str, str, str]:
+    """Return (result, installer_url, error_detail).
+
+    result is a version string, _UPTODATE or _ERROR. Tries the GitHub API first and falls
+    back to the website's download/latest.json (no rate limit, works through the VPN too).
+    """
+    errors = []
+    for name, source in (("GitHub", _from_github), ("website", _from_website)):
+        try:
+            ver, url = source()
+        except Exception as exc:
+            errors.append(f"{name}: {_describe(exc)}")
+            continue
+        if not ver:
+            errors.append(f"{name}: no version in response")
+            continue
+        if _ver(ver) <= _ver(APP_VERSION):
+            return _UPTODATE, "", ""
+        if url:
+            return ver, url, ""
+        errors.append(f"{name}: v{ver} has no installer file")
+
+    detail = "\n".join(errors)
+    _log("update check failed | " + detail.replace("\n", " | "))
+    return _ERROR, "", detail
 
 
 def start_auto_updates(parent) -> None:
@@ -85,11 +135,15 @@ def check_for_update(parent, force: bool = False) -> None:
         checking.setMinimumDuration(0)
         checking.show()
 
-    state: dict = {"done": False, "result": "", "url": ""}
+    state: dict = {"done": False, "result": _ERROR, "url": "", "detail": ""}
 
     def _worker():
-        state["result"], state["url"] = _fetch_latest()
-        state["done"] = True
+        try:
+            state["result"], state["url"], state["detail"] = _fetch_latest()
+        except Exception as exc:  # never leave the poller waiting forever
+            state["detail"] = _describe(exc)
+        finally:
+            state["done"] = True
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -111,8 +165,10 @@ def check_for_update(parent, force: bool = False) -> None:
                 if force:
                     QMessageBox.warning(
                         parent, "Update Check Failed",
-                        "Could not reach the update server.\n"
-                        "Check your internet connection and try again.")
+                        "Could not reach the update server.\n\n"
+                        f"Details:\n{state['detail'] or 'unknown error'}\n\n"
+                        "Check your internet connection (and the VPN, if it is on) "
+                        "and try again.")
             elif force or result not in _declined:
                 if _prompt_and_download(parent, result, url):
                     return  # download running; it clears _busy when it ends
