@@ -6,6 +6,7 @@ from core.manager import AppManager
 from core.commands import CommandProcessor
 from core.updater import start_auto_updates
 from ui.main_window import MainWindow
+from core.osinfo import IS_WINDOWS
 
 
 def _set_process_icon(icon_path: str) -> None:
@@ -32,6 +33,36 @@ def _set_process_icon(icon_path: str) -> None:
         pass
 
 
+def _smoke_test(app, window, seconds: float) -> None:
+    """ST_SMOKE_TEST=<seconds>: open every tab, then quit. Exit code 1 if anything raised.
+    Used by the build pipeline to prove the packaged app really starts on each OS."""
+    import traceback
+    errors = []
+
+    def hook(etype, value, tb):
+        errors.append(''.join(traceback.format_exception(etype, value, tb)))
+        sys.__excepthook__(etype, value, tb)
+    sys.excepthook = hook
+
+    def visit_tabs():
+        tabs = window.gui.tabs
+        for i in range(tabs.count()):
+            tabs.setCurrentIndex(i)
+            app.processEvents()
+            print(f"SMOKE tab {i}: {tabs.tabText(i)}", flush=True)
+
+    def finish():
+        print(f"SMOKE {'FAILED' if errors else 'OK'} ({len(errors)} error(s))", flush=True)
+        for e in errors:
+            print(e, flush=True)
+        window._force_quit = True
+        window.gui.cleanup()
+        os._exit(1 if errors else 0)
+
+    QTimer.singleShot(1500, visit_tabs)
+    QTimer.singleShot(int(seconds * 1000), finish)
+
+
 def main():
     _icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               'assets', 'STsoftwareterminalLOGO.png.png')
@@ -39,7 +70,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setFont(QFont("Segoe UI", 9))
+    if IS_WINDOWS:
+        app.setFont(QFont("Segoe UI", 9))      # macOS/Linux keep their native UI font
 
     if os.path.exists(_icon_path):
         app.setWindowIcon(QIcon(_icon_path))
@@ -48,7 +80,12 @@ def main():
     processor = CommandProcessor(manager)
     window    = MainWindow(manager, processor)
     window.show()
-    start_auto_updates(window)
+
+    smoke = os.environ.get("ST_SMOKE_TEST")
+    if smoke:
+        _smoke_test(app, window, float(smoke))
+    else:
+        start_auto_updates(window)
 
     sys.exit(app.exec())
 

@@ -4,6 +4,7 @@ from PySide6.QtGui import QFont, QColor, QTextCursor, QFontMetrics
 import os
 import subprocess
 import sys
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
 
 # Dark  —  Black & Green
 _D = {
@@ -105,7 +106,7 @@ class _YtWorker(QThread):
 
     def run(self):
         if not os.path.exists(self._exe):
-            self.finished.emit(False, f"yt-dlp.exe not found at: {self._exe}")
+            self.finished.emit(False, f"yt-dlp not found at: {self._exe}")
             return
 
         outtmpl = os.path.join(self._dest_dir, "%(title)s.%(ext)s")
@@ -123,7 +124,7 @@ class _YtWorker(QThread):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             title = ""
             for line in proc.stdout:
@@ -397,13 +398,22 @@ class TerminalWidget(QWidget):
         pictures = os.path.join(os.path.expanduser("~"), "Pictures")
         os.makedirs(pictures, exist_ok=True)
 
-        # Locate yt-dlp.exe: next to ST.exe when compiled, in tools/ in dev
+        # Locate yt-dlp: next to the app binary when compiled, in tools/ in dev
+        yt_name = "yt-dlp.exe" if IS_WINDOWS else "yt-dlp_macos" if IS_MAC else "yt-dlp"
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        exe_path = os.path.join(exe_dir, "tools", "yt-dlp.exe")
+        exe_path = os.path.join(exe_dir, "tools", yt_name)
         if not os.path.exists(exe_path):
             exe_path = os.path.normpath(
-                os.path.join(os.path.dirname(__file__), "..", "tools", "yt-dlp.exe")
+                os.path.join(os.path.dirname(__file__), "..", "tools", yt_name)
             )
+        if not os.path.exists(exe_path) and not IS_WINDOWS:
+            import shutil
+            exe_path = shutil.which("yt-dlp") or exe_path   # e.g. installed with Homebrew
+        if os.path.exists(exe_path) and not IS_WINDOWS and not os.access(exe_path, os.X_OK):
+            try:
+                os.chmod(exe_path, 0o755)
+            except OSError:
+                pass
 
         worker = _YtWorker(url, pictures, exe_path)
         self._yt_workers.append(worker)

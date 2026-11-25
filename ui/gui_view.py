@@ -1,7 +1,10 @@
 import os
 import sys
 import threading
-import winreg
+try:
+    import winreg
+except ImportError:          # macOS / Linux
+    winreg = None
 from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
@@ -20,11 +23,15 @@ from core.performance_monitor import PerformanceMonitor
 from core.task_manager import TaskManagerBackend
 from ui.graph_widget import UsageGraph
 from ui.task_table import ProcessTableModel, HistoryTableModel, TaskSortProxy
-from ui.services_view import ServicesView
-from ui.startup_view import StartupView
-from ui.device_settings_view import DeviceSettingsView
 from ui.antivirus_view import AntivirusView
-from ui.vpn_view import VpnView
+from core.osinfo import IS_MAC, IS_WINDOWS
+
+# Windows-only screens (Windows services, registry tweaks, startup entries, Tor VPN)
+if IS_WINDOWS:
+    from ui.services_view import ServicesView
+    from ui.startup_view import StartupView
+    from ui.device_settings_view import DeviceSettingsView
+    from ui.vpn_view import VpnView
 
 # (column_index, Qt.SortOrder) pairs used by the sort combo
 _TASK_SORT_PROXY = [
@@ -290,18 +297,19 @@ class GUIView(QWidget):
         self._gpu_worker.details_ready.connect(self._on_gpu_details)
 
         # Lazy-loaded tab widgets (created once, reused)
-        self._svc_view        = ServicesView(self)
-        self._startup_view    = StartupView(self)
-        self._dev_settings    = DeviceSettingsView(self)
+        self._svc_view        = ServicesView(self)       if IS_WINDOWS else None
+        self._startup_view    = StartupView(self)        if IS_WINDOWS else None
+        self._dev_settings    = DeviceSettingsView(self) if IS_WINDOWS else None
         self._antivirus_view  = AntivirusView(self)
-        self._vpn_view        = VpnView(self)
+        self._vpn_view        = VpnView(self)            if IS_WINDOWS else None
 
         self._build_ui()
         self.refresh()
 
         # Apply saved theme to sidebar immediately
         _saved_theme = self.manager.settings.get("theme", "win95")
-        self._dev_settings.set_theme(_saved_theme)
+        if self._dev_settings is not None:
+            self._dev_settings.set_theme(_saved_theme)
 
         if self._perf.available:
             self._cpu_info = self._perf.cpu_info()
@@ -320,10 +328,9 @@ class GUIView(QWidget):
                 if hasattr(w, 'wake_now'):
                     w.wake_now()
                 w.wait(5000)
-        self._svc_view.cleanup()
-        self._startup_view.cleanup()
-        self._antivirus_view.cleanup()
-        self._vpn_view.cleanup()
+        for view in (self._svc_view, self._startup_view, self._antivirus_view, self._vpn_view):
+            if view is not None:
+                view.cleanup()
 
     # ── construction ──────────────────────────────────────────────────────────
 
@@ -339,12 +346,17 @@ class GUIView(QWidget):
         self.tabs.addTab(self._tab_pinned(),      "Pinned  ★")
         self.tabs.addTab(self._tab_devices(),     "Device Manager")
         self._task_tab_idx    = self.tabs.addTab(self._tab_tasks(),    "Task Manager")
-        self._svc_tab_idx     = self.tabs.addTab(self._svc_view,       "Services")
+        self._svc_tab_idx = self._devsettings_tab_idx = self._startup_tab_idx = -1
+        if self._svc_view is not None:
+            self._svc_tab_idx = self.tabs.addTab(self._svc_view, "Services")
         self.tabs.addTab(self._tab_settings(),    "Settings")
-        self._devsettings_tab_idx = self.tabs.addTab(self._dev_settings, "Device Settings")
-        self._startup_tab_idx   = self.tabs.addTab(self._startup_view,   "Advanced Startup")
+        if self._dev_settings is not None:
+            self._devsettings_tab_idx = self.tabs.addTab(self._dev_settings, "Device Settings")
+        if self._startup_view is not None:
+            self._startup_tab_idx = self.tabs.addTab(self._startup_view, "Advanced Startup")
         self._antivirus_tab_idx = self.tabs.addTab(self._antivirus_view, "AntiVirus")
-        self.tabs.addTab(self._vpn_view, "VPN")
+        if self._vpn_view is not None:
+            self.tabs.addTab(self._vpn_view, "VPN")
         self.tabs.currentChanged.connect(self._on_main_tab_changed)
 
     # ── tab: App Manager ──────────────────────────────────────────────────────
@@ -669,7 +681,8 @@ class GUIView(QWidget):
                   self._g_disk, self._g_net_up, self._g_net_down):
             if g:
                 g.set_theme(theme)
-        self._dev_settings.set_theme(theme)
+        if self._dev_settings is not None:
+            self._dev_settings.set_theme(theme)
 
     @staticmethod
     def _fmt_mb(mb: float) -> str:
@@ -962,9 +975,9 @@ class GUIView(QWidget):
             self._task_worker.activate()
         else:
             self._task_worker.deactivate()
-        if idx == self._svc_tab_idx:
+        if idx == self._svc_tab_idx and self._svc_view is not None:
             self._svc_view.load_once()
-        if idx == self._startup_tab_idx:
+        if idx == self._startup_tab_idx and self._startup_view is not None:
             self._startup_view.scan_once()
 
     def _on_proc_selection(self, selected, _deselected):
@@ -1081,7 +1094,8 @@ class GUIView(QWidget):
         )
 
         self.chk_start_windows = QCheckBox(
-            "Start ST-SoftwareTool automatically with Windows"
+            "Open ST-SoftwareTool automatically when you log in" if IS_MAC
+            else "Start ST-SoftwareTool automatically with Windows"
         )
         self.chk_start_windows.setChecked(
             self.manager.settings.get('start_with_windows', False)
@@ -1376,7 +1390,34 @@ class GUIView(QWidget):
             pass
 
     @staticmethod
+    def _set_startup_mac(enable: bool) -> None:
+        """macOS: a LaunchAgent opens the app at login."""
+        from core.osinfo import mac_app_bundle
+        agent = os.path.expanduser('~/Library/LaunchAgents/com.stsoftwaretool.app.plist')
+        if not enable:
+            try:
+                os.remove(agent)
+            except OSError:
+                pass
+            return
+        bundle = mac_app_bundle()
+        args = ['/usr/bin/open', bundle] if bundle else [sys.executable, os.path.abspath(sys.argv[0])]
+        import plistlib
+        try:
+            os.makedirs(os.path.dirname(agent), exist_ok=True)
+            with open(agent, 'wb') as f:
+                plistlib.dump({'Label': 'com.stsoftwaretool.app', 'ProgramArguments': args,
+                               'RunAtLoad': True}, f)
+        except OSError:
+            pass
+
+    @staticmethod
     def _set_startup_registry(enable: bool) -> None:
+        if IS_MAC:
+            GUIView._set_startup_mac(enable)
+            return
+        if winreg is None:
+            return
         _RUN_KEY  = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
         _APP_NAME = 'ST-SoftwareTool'
         # In compiled mode (PyInstaller or Nuitka) use the exe itself; no script path

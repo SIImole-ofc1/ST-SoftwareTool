@@ -5,21 +5,29 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# When running as a compiled binary (PyInstaller or Nuitka), use %AppData% so
-# user data lands in a writable location.  In dev mode use the local data/ dir.
-# NOTE: Nuitka does NOT set sys.frozen — detect it via proc_monitor.exe sibling.
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW, open_path
+
+
+# When running as a compiled binary (PyInstaller or Nuitka), keep user data in the
+# per-user app-data folder.  In dev mode use the local data/ dir.
 def _is_compiled() -> bool:
-    if getattr(sys, 'frozen', False):          # PyInstaller
+    if getattr(sys, 'frozen', False) or '__compiled__' in globals():   # PyInstaller / Nuitka
         return True
-    # Nuitka: proc_monitor.exe is compiled alongside ST.exe
+    # Older Nuitka builds: proc_monitor.exe is compiled alongside ST.exe
     return os.path.exists(
         os.path.join(os.path.dirname(sys.executable), 'proc_monitor.exe')
     )
 
-if _is_compiled():
-    DATA_DIR = Path(os.environ.get('APPDATA', Path.home())) / 'ST-SoftwareTool'
-else:
-    DATA_DIR = Path(__file__).parent.parent / "data"
+
+def _user_data_dir() -> Path:
+    if IS_WINDOWS:
+        return Path(os.environ.get('APPDATA', Path.home())) / 'ST-SoftwareTool'
+    if IS_MAC:
+        return Path.home() / 'Library' / 'Application Support' / 'ST-SoftwareTool'
+    return Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share')) / 'ST-SoftwareTool'
+
+
+DATA_DIR = _user_data_dir() if _is_compiled() else Path(__file__).parent.parent / "data"
 
 DATA_FILE = DATA_DIR / "apps.json"
 
@@ -149,24 +157,38 @@ class AppManager:
         "weather":           "bingweather:",
     }
 
+    # Well-known macOS apps (launched with `open -a`)
+    _MAC_SYSTEM_APPS = {
+        "settings": "System Settings", "system settings": "System Settings",
+        "preferences": "System Settings", "store": "App Store", "app store": "App Store",
+        "calculator": "Calculator", "notes": "Notes", "notepad": "TextEdit",
+        "textedit": "TextEdit", "task manager": "Activity Monitor",
+        "activity monitor": "Activity Monitor", "terminal": "Terminal",
+        "cmd": "Terminal", "finder": "Finder", "explorer": "Finder", "safari": "Safari",
+        "mail": "Mail", "photos": "Photos", "camera": "Photo Booth", "maps": "Maps",
+        "clock": "Clock", "weather": "Weather", "music": "Music", "calendar": "Calendar",
+        "screenshot": "Screenshot", "snipping tool": "Screenshot", "snip": "Screenshot",
+    }
+
     def launch_app(self, name: str) -> Tuple[bool, str]:
         app = self._find_app(name)
         if not app:
             return self._launch_by_name(name)
         if not os.path.exists(app.path):
-            return False, f"Executable not found: {app.path}"
+            return False, f"Program not found: {app.path}"
         try:
-            os.startfile(app.path)
+            open_path(app.path)
             return True, f"Launched '{name}'."
         except Exception:
             try:
-                subprocess.Popen([app.path],
-                                 creationflags=subprocess.CREATE_NO_WINDOW)
+                subprocess.Popen([app.path], creationflags=NO_WINDOW)
                 return True, f"Launched '{name}'."
             except Exception as e2:
                 return False, f"Failed to launch '{name}': {e2}"
 
     def _launch_by_name(self, name: str) -> Tuple[bool, str]:
+        if not IS_WINDOWS:
+            return self._launch_by_name_posix(name)
         import shutil
         key = name.lower().strip()
 
@@ -200,6 +222,32 @@ class AppManager:
             f"App '{name}' not found.\n"
             "  • Run  >_/sys:scan  to import installed apps, or\n"
             "  • Use  >_/from:add_app(\"C:\\path\\to\\app.exe\")  to add manually."
+        )
+
+    def _launch_by_name_posix(self, name: str) -> Tuple[bool, str]:
+        import shutil
+        key = name.lower().strip()
+        if IS_MAC:
+            for candidate in (self._MAC_SYSTEM_APPS.get(key), name):
+                if not candidate:
+                    continue
+                r = subprocess.run(['open', '-a', candidate], capture_output=True)
+                if r.returncode == 0:
+                    return True, f"Launched '{name}'."
+        found = shutil.which(name)
+        if found:
+            try:
+                subprocess.Popen([found], start_new_session=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True, f"Launched '{name}'."
+            except OSError:
+                pass
+        example = '/Applications/Example.app' if IS_MAC else '/usr/bin/example'
+        return (
+            False,
+            f"App '{name}' not found.\n"
+            "  • Run  >_/sys:scan  to import installed apps, or\n"
+            f"  • Use  >_/from:add_app(\"{example}\")  to add manually."
         )
 
     def pin_app(self, name: str, pin: bool = True) -> Tuple[bool, str]:
@@ -397,7 +445,7 @@ foreach ($base in ($dirs | Select-Object -Unique)) {
             proc = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps_code],
                 capture_output=True, text=True, timeout=60,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             found = []
             seen_names: set = set()
@@ -413,8 +461,38 @@ foreach ($base in ($dirs | Select-Object -Unique)) {
         except Exception:
             return []
 
+    def scan_mac_apps(self) -> List[Tuple[str, str, str]]:
+        """macOS: .app bundles in the standard Applications folders."""
+        roots = ['/Applications', '/Applications/Utilities', '/System/Applications',
+                 '/System/Applications/Utilities', str(Path.home() / 'Applications')]
+        found, seen = [], set()
+        for root in roots:
+            try:
+                entries = sorted(os.scandir(root), key=lambda e: e.name.lower())
+            except OSError:
+                continue
+            for e in entries:
+                paths = [e.path] if e.name.endswith('.app') else []
+                if not paths and e.is_dir(follow_symlinks=False) and not e.name.startswith('.'):
+                    # vendor folders such as /Applications/Microsoft Office/
+                    try:
+                        paths = [x.path for x in os.scandir(e.path) if x.name.endswith('.app')]
+                    except OSError:
+                        paths = []
+                for p in paths:
+                    name = os.path.basename(p)[:-4]
+                    if name.lower() not in seen:
+                        seen.add(name.lower())
+                        found.append((name, p, self._map_category(name)))
+        return sorted(found, key=lambda x: x[0].lower())
+
     def scan_all(self) -> List[Tuple[str, str, str]]:
-        """Registry + Start Menu + Desktop for all users, deduplicated by exe path."""
+        """Registry + Start Menu + Desktop for all users, deduplicated by exe path.
+        On macOS: the Applications folders."""
+        if IS_MAC:
+            return self.scan_mac_apps()
+        if not IS_WINDOWS:
+            return []
         by_path: dict = {}  # exe_path.lower() -> (name, path, category)
 
         for name, path, cat in self.scan_registry():

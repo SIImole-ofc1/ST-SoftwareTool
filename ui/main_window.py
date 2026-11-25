@@ -137,7 +137,8 @@ class MainWindow(QMainWindow):
 
     def _auto_vpn_connect(self):
         try:
-            self.gui._vpn_view.request_auto_connect()
+            if self.gui._vpn_view is not None:
+                self.gui._vpn_view.request_auto_connect()
         except Exception:
             pass
 

@@ -6,8 +6,9 @@
 #   1. Bumps the version in updater.py and ST-Setup.iss
 #   2. Builds the app with Nuitka
 #   3. Compiles the installer with Inno Setup
-#   4. Creates a GitHub Release and uploads ST-SoftwareTool-Setup.exe
-#   5. Commits and pushes all changes (triggers Cloudflare Pages deploy)
+#   4. Commits and pushes all changes (triggers Cloudflare Pages deploy)
+#   5. Creates a GitHub Release on that commit and uploads ST-SoftwareTool-Setup.exe
+#      (GitHub Actions then builds the macOS .dmg files and attaches them)
 
 param(
     [Parameter(Mandatory=$true)]
@@ -21,7 +22,7 @@ Write-Host "`n=== ST-SoftwareTool Release Script ===" -ForegroundColor Cyan
 Write-Host "Version: $Version`n" -ForegroundColor Cyan
 
 # ── 1. Bump version ───────────────────────────────────────────────────────────
-Write-Host "[1/4] Bumping version to $Version..." -ForegroundColor Yellow
+Write-Host "[1/5] Bumping version to $Version..." -ForegroundColor Yellow
 
 # Always read as UTF-8: Windows PowerShell 5.1 otherwise assumes ANSI and mangles non-ASCII text.
 $updater = "$root\core\updater.py"
@@ -48,7 +49,7 @@ $latest = "$root\download\latest.json"
 Write-Host "  Done." -ForegroundColor Green
 
 # ── 2. Nuitka (native compilation — no decompilable bytecode) ─────────────────
-Write-Host "`n[2/4] Compiling with Nuitka (this takes ~40 min on first run)..." -ForegroundColor Yellow
+Write-Host "`n[2/5] Compiling with Nuitka (this takes ~40 min on first run)..." -ForegroundColor Yellow
 Set-Location $root
 
 # Find Python: PATH first, then the usual per-user / all-users install folders
@@ -102,7 +103,7 @@ Copy-Item "core\tor_bundle" "dist_nuitka\main.dist\core\" -Recurse -Force
 Write-Host "  Done." -ForegroundColor Green
 
 # ── 3. Inno Setup ─────────────────────────────────────────────────────────────
-Write-Host "`n[3/4] Compiling installer with Inno Setup..." -ForegroundColor Yellow
+Write-Host "`n[3/5] Compiling installer with Inno Setup..." -ForegroundColor Yellow
 $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
           "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") |
         Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -111,8 +112,25 @@ if (-not $iscc) { Write-Host "ERROR: Inno Setup 6 not found" -ForegroundColor Re
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Inno Setup failed" -ForegroundColor Red; exit 1 }
 Write-Host "  Done." -ForegroundColor Green
 
-# ── 4. GitHub Release ─────────────────────────────────────────────────────────
-Write-Host "`n[4/4] Creating GitHub Release v$Version..." -ForegroundColor Yellow
+# ── 4. Git commit + push (before the release, so its tag points at this commit) ─
+# The macOS build (GitHub Actions) checks out the release tag: it must contain the bump.
+Write-Host "`n[4/5] Committing and pushing..." -ForegroundColor Yellow
+Set-Location $root
+git add core/updater.py ST-Setup.iss index.html release.ps1 main.py download/latest.json
+git add core/commands.py ui/terminal_widget.py core/av_*.py ui/main_window.py
+git add tools/yt-dlp.exe 2>$null
+git add .gitignore 2>$null
+git commit -m "Release v$Version"
+git push origin main
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: git push failed - pull the remote changes, then run this script again." -ForegroundColor Red
+    exit 1
+}
+$releaseSha = (git rev-parse HEAD).Trim()
+Write-Host "  Pushed $releaseSha. Cloudflare Pages will deploy in ~1 minute." -ForegroundColor Green
+
+# ── 5. GitHub Release ─────────────────────────────────────────────────────────
+Write-Host "`n[5/5] Creating GitHub Release v$Version..." -ForegroundColor Yellow
 
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices;
@@ -161,9 +179,14 @@ try {
     }
 } catch {
     $body = @{
-        tag_name = "v$Version"
-        name     = "ST-SoftwareTool v$Version"
-        body     = "ST-SoftwareTool v$Version`n`nDownload ST-SoftwareTool-Setup.exe below to install or upgrade."
+        tag_name         = "v$Version"
+        target_commitish = $releaseSha
+        name             = "ST-SoftwareTool v$Version"
+        body             = "ST-SoftwareTool v$Version`n`n" +
+                           "- Windows: ST-SoftwareTool-Setup.exe`n" +
+                           "- macOS (Apple Silicon): ST-SoftwareTool-macOS-arm64.dmg`n" +
+                           "- macOS (Intel): ST-SoftwareTool-macOS-x86_64.dmg`n`n" +
+                           "The macOS files are added automatically about 30-45 minutes after publishing."
     } | ConvertTo-Json
     $release   = Invoke-RestMethod -Method Post `
         -Uri "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases" `
@@ -181,17 +204,6 @@ $asset = Invoke-RestMethod -Method Post `
     -Headers $uh -Body $bytes -TimeoutSec 300
 
 Write-Host "  Live: $($asset.browser_download_url)" -ForegroundColor Green
-
-# ── 5. Git commit + push ──────────────────────────────────────────────────────
-Write-Host "`n[5/5] Committing and pushing..." -ForegroundColor Yellow
-Set-Location $root
-git add core/updater.py ST-Setup.iss index.html release.ps1 main.py download/latest.json
-git add core/commands.py ui/terminal_widget.py core/av_*.py ui/main_window.py
-git add tools/yt-dlp.exe 2>$null
-git add .gitignore 2>$null
-git commit -m "Release v$Version"
-git push origin main
-Write-Host "  Done. Cloudflare Pages will deploy in ~1 minute." -ForegroundColor Green
 
 Write-Host "`n=== Release v$Version complete! ===" -ForegroundColor Cyan
 Write-Host "Website download: always up to date (uses /releases/latest/download/)" -ForegroundColor Cyan

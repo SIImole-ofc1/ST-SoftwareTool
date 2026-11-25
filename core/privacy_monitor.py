@@ -1,10 +1,18 @@
-"""Camera and microphone usage monitor — polls Windows ConsentStore every 5 s."""
+"""Camera and microphone usage monitor — polls Windows ConsentStore every 5 s.
+
+Windows only: on macOS/Linux the monitor stays idle (macOS shows its own camera and
+microphone indicators in the menu bar).
+"""
 from __future__ import annotations
 
 import os
 import threading
-import winreg
 from typing import List
+
+try:
+    import winreg
+except ImportError:          # macOS / Linux
+    winreg = None
 
 from PySide6.QtCore import QThread, Signal
 
@@ -39,6 +47,8 @@ def _active_apps(consent_key: str) -> List[str]:
     non-packaged Win32 apps (timestamps one level deeper under NonPackaged).
     """
     names: List[str] = []
+    if winreg is None:
+        return names
     try:
         root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, consent_key)
     except OSError:

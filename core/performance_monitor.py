@@ -5,6 +5,7 @@ Windows WMI via PowerShell for GPU utilization.
 import time, os, shutil
 import subprocess
 from typing import List, Optional, Tuple, Dict
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
 
 
 def _find_nvidia_smi() -> Optional[str]:
@@ -56,10 +57,15 @@ class PerformanceMonitor:
         cores_p = _ps.cpu_count(logical=False) or 0 if _PSUTIL else 0
         cores_l = _ps.cpu_count(logical=True)  or 0 if _PSUTIL else 0
         try:
-            import winreg
-            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
-            name = winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+            if IS_WINDOWS:
+                import winreg
+                k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                    r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+                name = winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+            elif IS_MAC:
+                r = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'],
+                                   capture_output=True, text=True, timeout=3)
+                name = r.stdout.strip() or name
         except Exception:
             pass
         return {"name": name, "physical": cores_p, "logical": cores_l}
@@ -149,6 +155,8 @@ class PerformanceMonitor:
 
     def gpu_percent(self) -> Optional[float]:
         """GPU utilisation %.  Tries nvidia-smi first, then WMI. None = unavailable."""
+        if not IS_WINDOWS:
+            return None
         # ── nvidia-smi path (NVIDIA GPUs) ──
         if self._nvidia_smi is not False:
             smi = _find_nvidia_smi()
@@ -158,7 +166,7 @@ class PerformanceMonitor:
                         [smi, "--query-gpu=utilization.gpu",
                          "--format=csv,noheader,nounits"],
                         capture_output=True, text=True, timeout=4,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        creationflags=NO_WINDOW,
                     )
                     if r.returncode == 0:
                         PerformanceMonitor._nvidia_smi = True
@@ -180,7 +188,7 @@ class PerformanceMonitor:
             r = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
                 capture_output=True, text=True, timeout=4,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             out = r.stdout.strip()
             if out and out != "none":
@@ -196,6 +204,8 @@ class PerformanceMonitor:
         """
         result = {"name": "Unknown GPU", "vram_total_gb": 0.0,
                   "vram_used_gb": 0.0, "temp_c": 0}
+        if not IS_WINDOWS:
+            return result
         if self._nvidia_smi is not False:
             smi = _find_nvidia_smi()
             if smi:
@@ -205,7 +215,7 @@ class PerformanceMonitor:
                          "--query-gpu=name,memory.total,memory.used,temperature.gpu",
                          "--format=csv,noheader,nounits"],
                         capture_output=True, text=True, timeout=5,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        creationflags=NO_WINDOW,
                     )
                     if r.returncode == 0:
                         parts = [p.strip() for p in r.stdout.strip().split(",")]
@@ -227,7 +237,7 @@ class PerformanceMonitor:
             r = subprocess.run(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
                 capture_output=True, text=True, timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             parts = r.stdout.strip().split("|")
             result["name"]          = parts[0].strip()
@@ -244,6 +254,8 @@ class PerformanceMonitor:
 
     def cpu_temp(self) -> Optional[float]:
         """CPU temperature in °C via WMI ACPI thermal zones (best-effort)."""
+        if not IS_WINDOWS:
+            return None
         try:
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command',
@@ -251,7 +263,7 @@ class PerformanceMonitor:
                  ' -ErrorAction SilentlyContinue | Select-Object -First 1).CurrentTemperature;'
                  'if($t -ne $null){[math]::Round($t/10-273.15,1)}else{""}'],
                 capture_output=True, text=True, timeout=6,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             val = r.stdout.strip()
             if val:

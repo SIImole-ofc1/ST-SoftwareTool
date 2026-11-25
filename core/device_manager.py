@@ -2,6 +2,7 @@ import subprocess
 import json
 from collections import defaultdict
 from typing import List, Tuple
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
 
 # Device classes that can never be disabled
 _PROTECTED_CLASSES = frozenset({
@@ -108,9 +109,28 @@ class Device:
         )
 
 
+# macOS: system_profiler data types shown in the device list -> class label
+_MAC_TYPES = {
+    'SPUSBDataType':         'USB devices',
+    'SPBluetoothDataType':   'Bluetooth',
+    'SPAudioDataType':       'Audio inputs and outputs',
+    'SPDisplaysDataType':    'Display adapters',
+    'SPCameraDataType':      'Cameras',
+    'SPNetworkDataType':     'Network adapters',
+    'SPStorageDataType':     'Volumes',
+    'SPPowerDataType':       'Batteries',
+}
+_MAC_SKIP_NAMES = {'USB 3.1 Bus', 'USB 3.0 Bus', 'USB31Bus', 'USB30Bus', 'device_title',
+                   'controller_properties', 'devices_list'}
+
+
 class DeviceManager:
     def get_devices(self) -> List[Device]:
-        """Query all PnP devices via PowerShell."""
+        """Query all PnP devices via PowerShell (Windows) / system_profiler (macOS)."""
+        if IS_MAC:
+            return self._mac_devices()
+        if not IS_WINDOWS:
+            return []
         ps = r"""
 $ErrorActionPreference = 'SilentlyContinue'
 Get-PnpDevice -ErrorAction SilentlyContinue |
@@ -121,7 +141,7 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                 capture_output=True, text=True, timeout=40,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             raw = r.stdout.strip()
             if not raw:
@@ -150,6 +170,38 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
 
         return sorted(devices, key=lambda d: (d.class_label.lower(), d.name.lower()))
 
+    def _mac_devices(self) -> List[Device]:
+        try:
+            r = subprocess.run(['system_profiler', '-json', '-detailLevel', 'mini',
+                                *_MAC_TYPES], capture_output=True, text=True, timeout=60)
+            data = json.loads(r.stdout or '{}')
+        except Exception:
+            return []
+        devices: List[Device] = []
+        seen: set = set()
+
+        def walk(items, dtype: str, depth: int = 0):
+            for item in items if isinstance(items, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get('_name') or '').strip()
+                if name and name not in _MAC_SKIP_NAMES and (dtype, name) not in seen:
+                    seen.add((dtype, name))
+                    d = Device(
+                        instance_id=f'{dtype}/{name}', name=name, class_name=_MAC_TYPES[dtype],
+                        status='OK', present=True,
+                        manufacturer=str(item.get('manufacturer') or item.get('sppci_vendor')
+                                         or item.get('spdisplays_vendor') or '').strip())
+                    d.protected = True          # macOS has no device enable/disable API
+                    devices.append(d)
+                for key, value in item.items():  # nested hubs, connected Bluetooth devices
+                    if isinstance(value, list) and depth < 6:
+                        walk(value, dtype, depth + 1)
+
+        for dtype in _MAC_TYPES:
+            walk(data.get(dtype, []), dtype)
+        return sorted(devices, key=lambda d: (d.class_label.lower(), d.name.lower()))
+
     def grouped(self, devices: List[Device]):
         """Return {class_label: [Device, ...]} dict."""
         groups: dict = defaultdict(list)
@@ -158,12 +210,14 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
         return dict(sorted(groups.items()))
 
     def disable_device(self, instance_id: str) -> Tuple[bool, str]:
+        if not IS_WINDOWS:
+            return False, "Turning devices on or off is only available on Windows."
         ps = f'Disable-PnpDevice -InstanceId "{instance_id}" -Confirm:$false -ErrorAction Stop'
         try:
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                 capture_output=True, text=True, timeout=15,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             if r.returncode == 0:
                 return True, "Device disabled."
@@ -172,12 +226,14 @@ Get-PnpDevice -ErrorAction SilentlyContinue |
             return False, str(e)
 
     def enable_device(self, instance_id: str) -> Tuple[bool, str]:
+        if not IS_WINDOWS:
+            return False, "Turning devices on or off is only available on Windows."
         ps = f'Enable-PnpDevice -InstanceId "{instance_id}" -Confirm:$false -ErrorAction Stop'
         try:
             r = subprocess.run(
                 ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
                 capture_output=True, text=True, timeout=15,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             if r.returncode == 0:
                 return True, "Device enabled."

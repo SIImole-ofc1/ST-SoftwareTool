@@ -16,6 +16,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+from core.osinfo import IS_WINDOWS, NO_WINDOW
 
 try:
     import psutil as _psutil
@@ -108,7 +109,7 @@ class TaskManagerBackend:
                     self._cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=NO_WINDOW,
                 )
                 return True
             except Exception:
@@ -257,11 +258,18 @@ class TaskManagerBackend:
         self._history.clear()
 
     def kill_process(self, pid: int) -> Tuple[bool, str]:
+        if not IS_WINDOWS:
+            try:
+                import psutil
+                psutil.Process(pid).kill()
+                return True, ''
+            except Exception as exc:
+                return False, str(exc)
         try:
             r = subprocess.run(
                 ['taskkill', '/f', '/pid', str(pid)],
                 capture_output=True, text=True, timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
             if r.returncode == 0:
                 return True, ''
