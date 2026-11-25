@@ -400,7 +400,11 @@
 
     <section id="download">
         <h2 style="font-size:16px;font-weight:bold;margin-bottom:20px">Download</h2>
-        <div class="download-inner">
+        <div class="platform-switch-row">
+            <span class="platform-switch-label">Choose your system</span>
+            <div id="platform-switch"></div>
+        </div>
+        <div class="download-inner download-pane" data-platform="windows">
 
             <div class="download-box window">
                 <div class="title-bar"><div class="title-bar-left">Latest Release</div></div>
@@ -408,9 +412,10 @@
                     <h3>ST-SoftwareTool for Windows</h3>
                     <p>Professional management utility for Windows 10 and Windows 11. Ready to run - no additional setup required.</p>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                        <a href="https://github.com/SIImole-ofc1/ST-SoftwareTool/releases/latest/download/ST-SoftwareTool-Setup.exe" class="btn btn-primary star-border" download><span class="star-border-label">Download Now</span></a>
+                        <a href="https://github.com/SIImole-ofc1/ST-SoftwareTool/releases/latest/download/ST-SoftwareTool-Setup.exe" class="btn btn-primary star-border" data-download download><span class="star-border-label">Download Now</span></a>
                         <span style="font-size:11px;color:#aab7ca"><span class="gh-version">v1.0.22</span> &nbsp;&#183;&nbsp; Windows 10/11 x64</span>
                     </div>
+                    <div class="download-thanks" aria-live="polite" hidden></div>
 
                     <div class="group-box" style="margin-top:16px;border-color:#46566e">
                         <div class="group-box-title" style="color:#8fc5ff">If Windows warns you</div>
@@ -446,6 +451,62 @@
                     <div style="padding:14px;font-size:11px;line-height:1.8;color:#cbd6e5">
                         <p style="margin:0 0 6px">Microsoft SmartScreen checks every downloaded <code>.exe</code> against a reputation database. New software with few downloads is flagged automatically regardless of whether it is safe.</p>
                         <p style="margin:0">ST-SoftwareTool does <strong>not</strong> connect to any external server, collect any data, or modify your system without your permission. All operations are local and visible.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="download-inner download-pane" data-platform="macos" hidden>
+
+            <div class="download-box window">
+                <div class="title-bar"><div class="title-bar-left">Latest Release</div></div>
+                <div style="padding:16px">
+                    <h3>ST-SoftwareTool for macOS</h3>
+                    <p>Native app for Apple Silicon and Intel Macs. Open the downloaded <code>.dmg</code> and drag ST-SoftwareTool into your Applications folder.</p>
+                    <div class="mac-download-row">
+                        <a href="https://github.com/SIImole-ofc1/ST-SoftwareTool/releases/latest/download/ST-SoftwareTool-macOS-arm64.dmg" class="btn btn-primary star-border" data-download download><span class="star-border-label">Apple Silicon</span></a>
+                        <a href="https://github.com/SIImole-ofc1/ST-SoftwareTool/releases/latest/download/ST-SoftwareTool-macOS-x86_64.dmg" class="btn btn-primary star-border" data-download download><span class="star-border-label">Intel</span></a>
+                        <span style="font-size:11px;color:#aab7ca"><span class="gh-version">v1.0.22</span> &nbsp;&#183;&nbsp; <span class="mac-min-os">macOS 12+</span></span>
+                    </div>
+                    <p class="mac-coming-soon" hidden>The macOS version arrives with the next release &mdash; check back soon.</p>
+                    <p class="mac-which">Not sure which one? Open the Apple menu &rarr; <strong>About This Mac</strong>. &ldquo;Chip: Apple M&hellip;&rdquo; means <strong>Apple Silicon</strong>, &ldquo;Processor: Intel&hellip;&rdquo; means <strong>Intel</strong>.</p>
+                    <div class="download-thanks" aria-live="polite" hidden></div>
+
+                    <div class="group-box" style="margin-top:16px;border-color:#46566e">
+                        <div class="group-box-title" style="color:#8fc5ff">If macOS blocks it</div>
+                        <p style="font-size:11px;line-height:1.8;color:#cbd6e5;margin:0">
+                            The first time you open it, macOS may say it can&rsquo;t verify the developer. To open it:
+                        </p>
+                        <ol style="font-size:11px;line-height:2;color:#cbd6e5;margin:6px 0 0 16px;padding:0">
+                            <li>Double-click ST-SoftwareTool once, then close the warning</li>
+                            <li>Open <strong>System Settings</strong> &rarr; <strong>Privacy &amp; Security</strong></li>
+                            <li>Scroll down and click <strong>Open Anyway</strong></li>
+                        </ol>
+                        <p style="font-size:11px;color:#aab7ca;margin:6px 0 0">
+                            You only need to do this once &mdash; updates open normally.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="download-side">
+                <div class="window">
+                    <div class="title-bar"><div class="title-bar-left">Requirements</div></div>
+                    <div style="padding:16px">
+                        <ul class="req-list">
+                            <li><span class="mac-min-os">macOS 12 Monterey or newer</span></li>
+                            <li>Apple Silicon (M1 or newer) or Intel processor</li>
+                            <li>Services, Device Settings, Advanced Startup and VPN are Windows-only for now</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="window">
+                    <div class="title-bar"><div class="title-bar-left">Why does macOS warn me?</div></div>
+                    <div style="padding:14px;font-size:11px;line-height:1.8;color:#cbd6e5">
+                        <p style="margin:0 0 6px">macOS Gatekeeper shows this warning for every app that isn&rsquo;t registered with Apple&rsquo;s paid developer program. It says nothing about whether the app is safe.</p>
+                        <p style="margin:0">ST-SoftwareTool is free, and every macOS version is built automatically from the public source code on GitHub.</p>
                     </div>
                 </div>
             </div>
@@ -530,6 +591,9 @@
 <script src="technology-loop.js"></script>
 <script src="star-border.js"></script>
 <script src="aurora.js"></script>
+<script src="rubber-segment.js"></script>
+<script src="text-type.js"></script>
+<script src="download.js"></script>
 <script src="back-to-top.js"></script>
 </body>
 </html>

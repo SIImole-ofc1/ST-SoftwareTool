@@ -24,6 +24,9 @@ fetch('https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest
         document.querySelectorAll('.gh-version').forEach(element => {
             element.textContent = release.tag_name;
         });
+        // Shared with download.js (e.g. to see whether the macOS files are published yet)
+        window.stLatestRelease = release;
+        window.dispatchEvent(new CustomEvent('st:release', { detail: release }));
     })
     .catch(error => console.error('Unable to load the latest version:', error));
 
