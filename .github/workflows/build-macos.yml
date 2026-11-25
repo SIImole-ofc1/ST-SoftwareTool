@@ -55,7 +55,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install PySide6 psutil nuitka ordered-set zstandard
+          # PySide6 6.8 LTS: Qt 6.8 still supports macOS 12+, newer Qt needs macOS 14.4+
+          # (many Intel Macs can't update past macOS 13).
+          python -m pip install "PySide6==6.8.*" psutil nuitka ordered-set zstandard
 
       - name: Read app version
         run: |
@@ -118,6 +120,42 @@ jobs:
           mv "$app" "build/ST-SoftwareTool.app"
           chmod +x build/ST-SoftwareTool.app/Contents/MacOS/tools/yt-dlp_macos || true
           ls -la build/ST-SoftwareTool.app/Contents/MacOS | head -20
+
+      - name: Set minimum macOS version
+        # Read the newest "minimum macOS" any bundled binary was built for and declare it
+        # in Info.plist, so older Macs get Apple's clear "requires macOS X" message
+        # instead of a crash.
+        run: |
+          MIN_MACOS=$(python - <<'PY'
+          import glob, os, struct
+          def minos(path):
+              if not os.path.isfile(path) or os.path.islink(path):
+                  return None
+              with open(path, 'rb') as f:
+                  data = f.read(65536)
+              if len(data) < 32 or struct.unpack('<I', data[:4])[0] != 0xFEEDFACF:
+                  return None
+              ncmds, off = struct.unpack('<I', data[16:20])[0], 32
+              for _ in range(ncmds):
+                  cmd, size = struct.unpack('<II', data[off:off + 8])
+                  if cmd == 0x32:
+                      v = struct.unpack('<I', data[off + 12:off + 16])[0]
+                      return (v >> 16, (v >> 8) & 0xff)
+                  if cmd == 0x24:
+                      v = struct.unpack('<I', data[off + 8:off + 12])[0]
+                      return (v >> 16, (v >> 8) & 0xff)
+                  off += size
+          files = glob.glob('build/ST-SoftwareTool.app/Contents/MacOS/**/*', recursive=True)
+          found = [m for m in map(minos, files) if m]
+          print('%d.%d' % max(found))
+          PY
+          )
+          echo "Minimum macOS for this build: $MIN_MACOS"
+          plist=build/ST-SoftwareTool.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Delete :LSMinimumSystemVersion" "$plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $MIN_MACOS" "$plist"
+          echo "MIN_MACOS=$MIN_MACOS" >> "$GITHUB_ENV"
+          echo "### ${{ matrix.arch }}: requires macOS $MIN_MACOS or newer" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sign app (ad-hoc)
         run: |
