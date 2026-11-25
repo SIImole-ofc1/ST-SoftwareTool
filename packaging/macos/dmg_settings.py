@@ -19,8 +19,8 @@ hide_extensions = [appname]                        # label reads "ST-SoftwareToo
 icon = defines.get("icon")                         # noqa: F821  volume icon in Finder / Desktop
 background = defines["background"]                 # noqa: F821  1x + 2x combined TIFF
 
-# Window: 800 x 450 content area (Finder adds the title bar on top)
-window_rect = ((200, 140), (800, 450))
+# Window: 800 x 450 background + 28 pt title bar (Finder counts the title bar in the size)
+window_rect = ((200, 140), (800, 478))
 default_view = "icon-view"
 show_status_bar = False
 show_tab_view = False
