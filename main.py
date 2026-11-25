@@ -45,6 +45,11 @@ def _smoke_test(app, window, seconds: float) -> None:
     sys.excepthook = hook
 
     def visit_tabs():
+        from PySide6.QtGui import QFontInfo
+        for family in ("Consolas", "Segoe UI"):
+            info = QFontInfo(QFont(family, 9))
+            print(f"SMOKE font '{family}' -> '{info.family()}' fixedPitch={info.fixedPitch()}",
+                  flush=True)
         tabs = window.gui.tabs
         for i in range(tabs.count()):
             tabs.setCurrentIndex(i)
