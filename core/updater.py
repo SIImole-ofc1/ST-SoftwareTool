@@ -12,7 +12,7 @@ import urllib.request
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-APP_VERSION = "1.0.21"
+APP_VERSION = "1.0.22"
 _RELEASES_API = "https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest"
 _LATEST_JSON = "https://st-softwaretool.pages.dev/download/latest.json"  # fallback source
 _USER_AGENT = "ST-SoftwareTool-Updater"
