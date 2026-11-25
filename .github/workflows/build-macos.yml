@@ -15,6 +15,7 @@ on:
       - 'core/**'
       - 'ui/**'
       - 'assets/**'
+      - 'packaging/macos/**'
       - '.github/workflows/build-macos.yml'
 
 permissions:
@@ -168,15 +169,47 @@ jobs:
           echo "Launching $bin"
           ST_SMOKE_TEST=20 "$bin"
 
-      - name: Build .dmg
+      - name: Build .dmg (custom install window)
+        # Window design: packaging/macos/make_dmg_background.py (background) and
+        # packaging/macos/dmg_settings.py (size, icon positions).
         run: |
-          rm -rf build/dmg && mkdir -p build/dmg
-          cp -R build/ST-SoftwareTool.app build/dmg/
-          ln -s /Applications build/dmg/Applications
-          hdiutil create -volname "ST-SoftwareTool" -srcfolder build/dmg \
-            -ov -format UDZO "build/$DMG_NAME"
+          python -m pip install "dmgbuild>=1.6"
+          tiffutil -cathidpicheck packaging/macos/dmg-background.png \
+            packaging/macos/dmg-background@2x.png -out build/dmg-background.tiff
+          dmgbuild -s packaging/macos/dmg_settings.py \
+            -D app=build/ST-SoftwareTool.app \
+            -D background=build/dmg-background.tiff \
+            -D icon=build/ST.icns \
+            "ST-SoftwareTool" "build/$DMG_NAME"
           hdiutil verify "build/$DMG_NAME"
           ls -lh "build/$DMG_NAME"
+
+      - name: Screenshot the install window (light + dark mode)
+        continue-on-error: true
+        run: |
+          mkdir -p build/screens
+          hdiutil attach "build/$DMG_NAME" -noautoopen
+          vol=/Volumes/ST-SoftwareTool
+          ls -la "$vol"
+          shoot() {
+            osascript -e 'tell application "Finder" to close every window' || true
+            open "$vol"
+            sleep 6
+            osascript -e 'tell application "Finder" to get bounds of front window' || true
+            screencapture -x "build/screens/install-window-$1.png"
+          }
+          shoot light
+          osascript -e 'tell application "System Events" to tell appearance preferences to set dark mode to true' && shoot dark
+          osascript -e 'tell application "System Events" to tell appearance preferences to set dark mode to false' || true
+          osascript -e 'tell application "Finder" to close every window' || true
+          hdiutil detach "$vol" || hdiutil detach -force "$vol"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: install-window-screenshots-${{ matrix.arch }}
+          path: build/screens/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         with:
