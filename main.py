@@ -4,7 +4,7 @@ from PySide6.QtGui import QFont, QIcon
 from PySide6.QtCore import QTimer
 from core.manager import AppManager
 from core.commands import CommandProcessor
-from core.updater import check_for_update
+from core.updater import start_auto_updates
 from ui.main_window import MainWindow
 
 
@@ -48,7 +48,7 @@ def main():
     processor = CommandProcessor(manager)
     window    = MainWindow(manager, processor)
     window.show()
-    QTimer.singleShot(3000, lambda: check_for_update(window))
+    start_auto_updates(window)
 
     sys.exit(app.exec())
 

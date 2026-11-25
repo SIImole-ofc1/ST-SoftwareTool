@@ -10,7 +10,7 @@ from .terminal_widget import TerminalWidget
 from .gui_view import GUIView
 from core.privacy_monitor import PrivacyMonitor
 from core.background_tasks import BackgroundScanner
-from core.updater import APP_VERSION
+from core.updater import APP_VERSION, check_for_update
 
 
 class MainWindow(QMainWindow):

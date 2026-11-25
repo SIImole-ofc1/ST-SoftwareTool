@@ -23,17 +23,24 @@ Write-Host "Version: $Version`n" -ForegroundColor Cyan
 # ── 1. Bump version ───────────────────────────────────────────────────────────
 Write-Host "[1/4] Bumping version to $Version..." -ForegroundColor Yellow
 
+# Always read as UTF-8: Windows PowerShell 5.1 otherwise assumes ANSI and mangles non-ASCII text.
 $updater = "$root\core\updater.py"
-(Get-Content $updater) -replace 'APP_VERSION = "[^"]+"', "APP_VERSION = `"$Version`"" |
+(Get-Content $updater -Encoding UTF8) -replace 'APP_VERSION = "[^"]+"', "APP_VERSION = `"$Version`"" |
     Set-Content $updater -Encoding UTF8
 
 $iss = "$root\ST-Setup.iss"
-(Get-Content $iss) -replace '#define AppVersion\s+"[^"]+"', "#define AppVersion   `"$Version`"" |
+(Get-Content $iss -Encoding UTF8) -replace '#define AppVersion\s+"[^"]+"', "#define AppVersion   `"$Version`"" |
     Set-Content $iss -Encoding UTF8
 
 $html = "$root\index.html"
-(Get-Content $html -Raw) -replace '<span class="gh-version">[^<]*</span>', "<span class=""gh-version"">v$Version</span>" |
+(Get-Content $html -Raw -Encoding UTF8) -replace '<span class="gh-version">[^<]*</span>', "<span class=""gh-version"">v$Version</span>" |
     Set-Content $html -Encoding UTF8
+
+$latest = "$root\download\latest.json"
+[ordered]@{
+    version = $Version
+    url     = "https://github.com/SIImole-ofc1/ST-SoftwareTool/releases/download/v$Version/ST-SoftwareTool-Setup.exe"
+} | ConvertTo-Json | Set-Content $latest -Encoding UTF8
 
 Write-Host "  Done." -ForegroundColor Green
 
@@ -41,11 +48,22 @@ Write-Host "  Done." -ForegroundColor Green
 Write-Host "`n[2/4] Compiling with Nuitka (this takes ~40 min on first run)..." -ForegroundColor Yellow
 Set-Location $root
 
+# Find Python: PATH first, then the usual per-user / all-users install folders
+$python = (Get-Command python.exe -ErrorAction SilentlyContinue |
+           Where-Object { $_.Source -notmatch 'WindowsApps' } | Select-Object -First 1).Source
+if (-not $python) {
+    $python = @("$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+                "C:\Program Files\Python312\python.exe") |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $python) { Write-Host "ERROR: Python 3.12 not found" -ForegroundColor Red; exit 1 }
+Write-Host "  Using Python: $python"
+
 # Clean previous Nuitka outputs
 Remove-Item -Recurse -Force dist_nuitka -ErrorAction SilentlyContinue
 
 # Build main app
-python -m nuitka `
+& $python -m nuitka `
     --standalone `
     --windows-console-mode=disable `
     --enable-plugin=pyside6 `
@@ -60,7 +78,7 @@ python -m nuitka `
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Nuitka main build failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit 1 }
 
 # Build proc_monitor — psutil runs here so the main process stays GIL-free
-python -m nuitka `
+& $python -m nuitka `
     --standalone `
     --windows-console-mode=attach `
     --output-dir=dist_nuitka\proc_monitor_build `
@@ -82,7 +100,10 @@ Write-Host "  Done." -ForegroundColor Green
 
 # ── 3. Inno Setup ─────────────────────────────────────────────────────────────
 Write-Host "`n[3/4] Compiling installer with Inno Setup..." -ForegroundColor Yellow
-$iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+$iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+          "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $iscc) { Write-Host "ERROR: Inno Setup 6 not found" -ForegroundColor Red; exit 1 }
 & $iscc "$root\ST-Setup.iss" 2>$null
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: Inno Setup failed" -ForegroundColor Red; exit 1 }
 Write-Host "  Done." -ForegroundColor Green
@@ -161,7 +182,7 @@ Write-Host "  Live: $($asset.browser_download_url)" -ForegroundColor Green
 # ── 5. Git commit + push ──────────────────────────────────────────────────────
 Write-Host "`n[5/5] Committing and pushing..." -ForegroundColor Yellow
 Set-Location $root
-git add core/updater.py ST-Setup.iss index.html release.ps1
+git add core/updater.py ST-Setup.iss index.html release.ps1 main.py download/latest.json
 git add core/commands.py ui/terminal_widget.py core/antivirus_manager.py ui/main_window.py
 git add tools/yt-dlp.exe 2>$null
 git add .gitignore 2>$null

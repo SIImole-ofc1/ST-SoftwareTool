@@ -55,6 +55,12 @@ begin
        SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+// True when launched by the in-app updater (ST.exe passes /AUTOUPDATE=1)
+function IsAutoUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   KillST();
@@ -103,6 +109,10 @@ Root: HKCU; \
 Filename: "{app}\{#AppExeName}"; \
     Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; \
     Flags: nowait postinstall skipifsilent shellexec
+; After a silent in-app auto-update, restart the app automatically
+Filename: "{app}\{#AppExeName}"; \
+    Flags: nowait shellexec; \
+    Check: IsAutoUpdate
 
 [UninstallDelete]
 ; Remove installed app files and user-data folder on uninstall
