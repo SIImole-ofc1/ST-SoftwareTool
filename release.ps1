@@ -40,7 +40,10 @@ $latest = "$root\download\latest.json"
 [ordered]@{
     version = $Version
     url     = "https://github.com/SIImole-ofc1/ST-SoftwareTool/releases/download/v$Version/ST-SoftwareTool-Setup.exe"
-} | ConvertTo-Json | Set-Content $latest -Encoding UTF8
+} | ConvertTo-Json | ForEach-Object {
+    # No BOM: JSON parsers (e.g. Python's json.loads) reject a leading BOM
+    [System.IO.File]::WriteAllText($latest, $_ + "`n", (New-Object System.Text.UTF8Encoding $false))
+}
 
 Write-Host "  Done." -ForegroundColor Green
 
