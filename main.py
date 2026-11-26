@@ -163,18 +163,25 @@ def _smoke_test(app, window, seconds: float) -> None:
               flush=True)
         if level is None or level != expected:
             errors.append(f"Desktop widget not at desktop level ({level} != {expected})")
-        if shots_dir:
-            w.grab().save(os.path.join(shots_dir, "widget.png"))
+        if not shots_dir:
+            return
+        w.grab().save(os.path.join(shots_dir, "widget.png"))
+        # Small app window with the widget half under its right edge: the covered half must
+        # be hidden, the other half visible on the desktop.
+        saved = window.geometry()
+        window.setGeometry(40, 80, 560, 420)
+        w.move(window.frameGeometry().right() - 150, window.frameGeometry().top() + 100)
+        window.raise_()
+
+        def capture():
             subprocess.run(['screencapture', '-x', os.path.join(shots_dir, 'desktop-with-widget.png')],
                            timeout=20)
+            window.setGeometry(saved)
+        QTimer.singleShot(1500, capture)
 
     if os.environ.get("ST_SMOKE_WIDGET") and sys.platform == "darwin":
-        def open_widget():
-            window._set_perf_widget(True)
-            g = window.frameGeometry()
-            window._perf_widget.move(g.right() - 140, g.top() + 120)   # half under the window
-        QTimer.singleShot(1000, open_widget)
-        QTimer.singleShot(5500, check_widget)
+        QTimer.singleShot(1000, lambda: window._set_perf_widget(True))
+        QTimer.singleShot(4000, check_widget)
 
     QTimer.singleShot(1500, visit_tabs)
     if shots_dir:
