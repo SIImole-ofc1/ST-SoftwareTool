@@ -2401,53 +2401,66 @@ body {
     background: transparent;
 }
 
-.target-cursor {
+/* Gyro cursor (see gyro-cursor.js): arrow that turns toward its movement */
+.gyro-cursor {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
     z-index: 2147483647;
     pointer-events: none;
-    mix-blend-mode: difference;
-    color: var(--cursor-color, #fff);
-    opacity: 0;
-}
-
-.target-cursor span {
-    position: absolute;
-    top: 0;
-    left: 0;
-    box-sizing: border-box;
-    width: 12px;
-    height: 12px;
-    border: solid var(--cursor-color, #fff);
-    border-width: 2px 0 0 2px;
-    border-radius: var(--cursor-radius, 2px);
     transform-origin: 0 0;
-    will-change: transform;
-}
-
-.target-cursor i {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: var(--cursor-color, #fff);
-    will-change: transform;
-}
-
-.target-cursor b {
-    position: absolute;
-    color: var(--cursor-color, #fff);
-    font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    white-space: nowrap;
     opacity: 0;
-    will-change: left, top, opacity;
+    transition: opacity 140ms ease;
+    will-change: transform;
 }
 
-.target-cursor-enabled,
-.target-cursor-enabled * {
+.gyro-cursor.is-visible {
+    opacity: 1;
+}
+
+.gyro-cursor-arrow {
+    position: absolute;
+    left: -21px;
+    top: -11px;
+    width: 23px;
+    height: 22px;
+    max-width: none; /* the global `svg { max-width: 100% }` would shrink it to the 0-width root */
+    overflow: visible;
+    transform-origin: 21px 11px;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.55));
+}
+
+.gyro-cursor-arrow path {
+    fill: #eaf2ff;
+    stroke: #1d4ed8;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    transition: fill 160ms ease, stroke 160ms ease;
+}
+
+.gyro-cursor.is-hovering .gyro-cursor-arrow {
+    transform: scale(1.22);
+}
+
+.gyro-cursor.is-hovering .gyro-cursor-arrow path {
+    fill: #ffffff;
+    stroke: #0b1d4a;
+}
+
+.gyro-cursor.is-pressed .gyro-cursor-arrow {
+    transform: scale(0.82);
+}
+
+.gyro-cursor-enabled,
+.gyro-cursor-enabled * {
     cursor: none !important;
+}
+
+.gyro-cursor-enabled input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+.gyro-cursor-enabled textarea,
+.gyro-cursor-enabled [contenteditable="true"] {
+    cursor: text !important;
 }
 
 .content-reveal-ready {
