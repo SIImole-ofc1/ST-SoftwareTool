@@ -213,31 +213,16 @@ function appendLine(text, cls) {
     outEl.scrollTop = outEl.scrollHeight;
 }
 
-// Progress bar animation
-function animateProgress() {
-    document.querySelectorAll('.progress-fill[data-target]').forEach(bar => {
-        const target = bar.dataset.target;
-        bar.style.width = '0%';
-        setTimeout(() => { bar.style.width = target + '%'; }, 300);
+// Start terminal animation after page loads. Phones and tablets (no mouse) get the first
+// session as static text instead, without the typing animation.
+if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    if (outEl) SESSIONS[0].forEach(entry => appendLine(entry.text, entry.cls));
+} else {
+    window.addEventListener('load', () => {
+        if (outEl) reserveTerminalHeight();
+        later(nextSession, 600);
     });
 }
-
-// Intersection observer to trigger animations on scroll
-const observer = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-        if (e.isIntersecting) {
-            animateProgress();
-            observer.unobserve(e.target);
-        }
-    });
-}, { threshold: 0.3 });
-document.querySelectorAll('#monitor').forEach(el => observer.observe(el));
-
-// Start terminal animation after page loads
-window.addEventListener('load', () => {
-    if (outEl) reserveTerminalHeight();
-    later(nextSession, 600);
-});
 
 /* ── Privacy / Terms consent popup ───────────── */
 (function initPrivacyConsent() {

@@ -420,29 +420,6 @@ a * {
     font-size: 13px;
 }
 
-/* ── Progress bar ──────────────────────────────── */
-.progress-wrap {
-    border-top:    2px solid var(--dark-gray);
-    border-left:   2px solid var(--dark-gray);
-    border-right:  2px solid var(--white);
-    border-bottom: 2px solid var(--white);
-    background: var(--white);
-    height: 20px;
-    overflow: hidden;
-}
-.progress-fill {
-    height: 100%;
-    background: var(--blue);
-    background: repeating-linear-gradient(
-        90deg,
-        var(--blue) 0px,
-        var(--blue) 10px,
-        var(--blue-light) 10px,
-        var(--blue-light) 20px
-    );
-    transition: width 1.5s ease;
-}
-
 /* ── Status bar ────────────────────────────────── */
 .status-bar {
     display: flex;
@@ -699,23 +676,6 @@ section + section {
 }
 .cmd-table tr:nth-child(even) td { background: #b8b8b8; }
 .cmd-code { color: var(--blue); font-family: 'Consolas','Courier New',monospace; font-weight: bold; }
-
-/* ── Performance / Monitor ─────────────────────── */
-#monitor { background: var(--gray); }
-#monitor h2 { font-size: 16px; font-weight: bold; margin-bottom: 20px; }
-
-.monitor-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-}
-.monitor-card {
-    background: var(--gray);
-    padding: 12px 14px;
-}
-.monitor-card h4 { font-size: 12px; font-weight: bold; margin-bottom: 8px; color: var(--blue); }
-.monitor-label { font-size: 11px; margin-bottom: 3px; }
-.monitor-value { font-size: 11px; color: var(--dark-gray); }
 
 /* ── Download ──────────────────────────────────── */
 #download { background: var(--gray); }
@@ -1088,8 +1048,7 @@ section,
 .download-inner,
 .about-inner,
 .features-grid,
-.commands-layout,
-.monitor-grid {
+.commands-layout {
     min-width: 0;
 }
 
@@ -1119,11 +1078,6 @@ section,
     .commands-layout {
         grid-template-columns: 1fr;
         gap: 16px;
-    }
-
-    .monitor-grid {
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
     }
 
     .feature-split {
@@ -1300,11 +1254,6 @@ section,
     .cmd-table th,
     .cmd-table td {
         padding: 6px 8px;
-    }
-
-    .monitor-grid {
-        grid-template-columns: 1fr;
-        gap: 10px;
     }
 
     .status-bar {
@@ -2181,7 +2130,6 @@ html {
 }
 
 .hero-desc .tagline,
-.monitor-value,
 .about-logo-box p {
     color: #a4b1c4;
 }
@@ -2200,14 +2148,8 @@ html {
 }
 
 .cmd-code,
-.monitor-card h4,
 .privacy-control-item strong {
     color: #7dbaff;
-}
-
-.progress-wrap {
-    background: #080d15;
-    border-color: #53627a;
 }
 
 .status-bar {
@@ -2393,7 +2335,6 @@ body {
 #hero,
 #features,
 #commands,
-#monitor,
 #download,
 #about {
     background: rgba(13, 20, 32, 0.68);
