@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 from core.osinfo import IS_MAC, IS_WINDOWS, mac_app_bundle
 
-APP_VERSION = "1.0.24"
+APP_VERSION = "1.0.25"
 _REPO = "SIImole-ofc1/ST-SoftwareTool"
 _RELEASES_API = f"https://api.github.com/repos/{_REPO}/releases/latest"
 _LATEST_JSON = "https://st-softwaretool.pages.dev/download/latest.json"  # fallback source
