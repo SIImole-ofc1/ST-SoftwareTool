@@ -2395,8 +2395,6 @@ body {
 #download,
 #about {
     background: rgba(13, 20, 32, 0.68);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
 }
 
 #site-background {
@@ -2508,8 +2506,6 @@ body {
     border-radius: 12px;
     outline: 0;
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
 }
 
 .title-bar {
@@ -2546,10 +2542,8 @@ body {
     scrollbar-width: none;
     border: 1px solid rgba(164, 184, 211, 0.18);
     border-radius: 999px;
-    background: rgba(9, 14, 22, 0.9);
+    background: rgba(9, 14, 22, 0.95);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
 }
 
 .nav-menu::-webkit-scrollbar {
@@ -2675,8 +2669,6 @@ body {
     border-radius: 9px;
     outline: 0;
     background: rgba(12, 19, 30, 0.62);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
 }
 
 .group-box-title {
@@ -2738,16 +2730,12 @@ body {
 }
 
 .privacy-page .legal-header {
-    background: rgba(11, 17, 27, 0.82);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(11, 17, 27, 0.92);
 }
 
 .privacy-page .legal-document {
     background: rgba(16, 23, 34, 0.82);
     border-color: rgba(126, 151, 185, 0.32);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
 }
 
 .technology-section {
@@ -3061,9 +3049,7 @@ body {
     padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
 }
 .privacy-modal-backdrop {
-    background: rgba(2, 5, 10, 0.88);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    background: rgba(2, 5, 10, 0.9);
 }
 .privacy-modal-window {
     width: min(680px, 100%);

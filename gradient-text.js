@@ -80,6 +80,11 @@
 
         function tick(now) {
             raf = 0;
+            // Repaint at ~30fps: the colours drift slowly and every repaint re-rasterises the blurred glow.
+            if (now - last < 31) {
+                if (visible && !document.hidden) raf = requestAnimationFrame(tick);
+                return;
+            }
             time += Math.min(0.05, Math.max(0, (now - last) / 1000));
             last = now;
             paint();

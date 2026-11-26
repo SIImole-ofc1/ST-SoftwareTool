@@ -18,7 +18,7 @@
         sheen: 0,
         glow: 0.4,
         grain: 0.03,
-        quality: 0.5,          // 0.25 – 1
+        quality: 0.35,         // 0.25 – 1 (the veil is soft, so low values look the same)
         mouseInteraction: false,
         mouseStrength: 1,
         intro: true,
@@ -26,7 +26,8 @@
         opacity: 1,            // 0 – 1
         lightMode: false,
         paused: false,
-        dpr: 0                 // 0 = auto (capped at 2)
+        dpr: 1,                // canvas pixel ratio; 1 is plenty for a soft gradient and far cheaper on Retina
+        fps: 30                // frame cap; the veil drifts slowly, so 30 looks the same as 60
     };
 
     const QUAD_VERTEX = `#version 300 es
@@ -378,9 +379,14 @@ void main() {
         gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
+    const frameMs = 1000 / settings.fps;
     function frame(now) {
         raf = 0;
         if (document.hidden) return;
+        if (last && now - last < frameMs - 2) {
+            raf = requestAnimationFrame(frame);
+            return;
+        }
         const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
         last = now;
         const moving = !s.paused && !reduce;
