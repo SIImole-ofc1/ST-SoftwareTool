@@ -13,21 +13,27 @@ from PySide6.QtWidgets import (
     QTableView, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from core.osinfo import IS_MAC
 from core.startup_manager import StartupManager, StartupEntry
+from ui.async_call import call_async
 
+if IS_MAC:
+    from core.startup_manager_mac import MacStartupManager as _Manager
+else:
+    _Manager = StartupManager
 
-# ── type → accent colour (dark-theme safe; bright enough at #0a0a0a bg) ──────
-_TYPE_COLOR: dict = {
-    'Boot Execute':         '#ff4444',   # very early — bright red
-    'IFEO Debugger':        '#ff6622',   # potential hijack — orange
-    'Winlogon':             '#ffaa00',   # logon hook — amber
-    'AppInit DLL':          '#ff8800',   # injected into everything — orange
-    'Run Key':              '#00cc44',   # normal startup key — green
-    'Startup Folder':       '#44ff88',   # folder shortcut — light green
-    'Scheduled Task':       '#4488ff',   # task — blue
-    'Shell Extension':      '#aaaaaa',   # context menu — grey
-    'Browser Helper Object': '#888888',  # BHO — dim grey
-}
+# Legend under the filter bar: (short label, entry type). Colours come from the manager.
+_LEGEND = (
+    [('Login Item', 'Login Item'), ('Launch Agent', 'Launch Agent'),
+     ('Agent (all users)', 'Launch Agent (all users)'), ('Launch Daemon', 'Launch Daemon'),
+     ('Cron Job', 'Cron Job'), ('System Ext.', 'System Extension'),
+     ('Kernel Ext.', 'Kernel Extension')]
+    if IS_MAC else
+    [('Run Key', 'Run Key'), ('Startup Folder', 'Startup Folder'),
+     ('Scheduled Task', 'Scheduled Task'), ('Shell Ext.', 'Shell Extension'),
+     ('Winlogon', 'Winlogon'), ('AppInit DLL', 'AppInit DLL'),
+     ('Boot Execute', 'Boot Execute'), ('IFEO Hijack', 'IFEO Debugger')]
+)
 
 _DISABLED_COLOR = '#444444'
 
@@ -54,9 +60,10 @@ class _ScanWorker(QThread):
 class StartupTableModel(QAbstractTableModel):
     HEADERS = ['Name', 'Type', 'Enabled', 'Location', 'Command']
 
-    def __init__(self, parent=None):
+    def __init__(self, type_colors: dict, parent=None):
         super().__init__(parent)
         self._entries: List[StartupEntry] = []
+        self._type_colors = type_colors
 
     def rowCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._entries)
@@ -84,7 +91,7 @@ class StartupTableModel(QAbstractTableModel):
         if role == Qt.ForegroundRole:
             if not e.enabled:
                 return QBrush(QColor(_DISABLED_COLOR))
-            c = _TYPE_COLOR.get(e.location_type)
+            c = self._type_colors.get(e.location_type)
             if c:
                 return QBrush(QColor(c))
         return None
@@ -138,9 +145,10 @@ class _StartupProxy(QSortFilterProxyModel):
 class StartupView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._mgr    = StartupManager()
+        self._mgr    = _Manager()
         self._worker: Optional[_ScanWorker] = None
         self._loaded = False
+        self._busy   = False   # an enable / disable is running
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -178,16 +186,8 @@ class StartupView(QWidget):
         # ── legend bar (colour guide) ─────────────────────────────────────────
         legend = QHBoxLayout()
         legend.setSpacing(14)
-        for label, color in (
-            ('Run Key',        _TYPE_COLOR['Run Key']),
-            ('Startup Folder', _TYPE_COLOR['Startup Folder']),
-            ('Scheduled Task', _TYPE_COLOR['Scheduled Task']),
-            ('Shell Ext.',     _TYPE_COLOR['Shell Extension']),
-            ('Winlogon',       _TYPE_COLOR['Winlogon']),
-            ('AppInit DLL',    _TYPE_COLOR['AppInit DLL']),
-            ('Boot Execute',   _TYPE_COLOR['Boot Execute']),
-            ('IFEO Hijack',    _TYPE_COLOR['IFEO Debugger']),
-        ):
+        for label, entry_type in _LEGEND:
+            color = self._mgr.TYPE_COLORS[entry_type]
             dot = QLabel('●')
             dot.setStyleSheet(f'color: {color}; font-size: 12px;')
             lbl = QLabel(label)
@@ -202,7 +202,7 @@ class StartupView(QWidget):
 
         left = QGroupBox('Startup Entries')
         ll   = QVBoxLayout(left)
-        self._model = StartupTableModel(self)
+        self._model = StartupTableModel(self._mgr.TYPE_COLORS, self)
         self._proxy = _StartupProxy(self)
         self._proxy.setSourceModel(self._model)
 
@@ -248,10 +248,7 @@ class StartupView(QWidget):
         self._btn_enable.clicked.connect(self._enable_entry)
         self._btn_disable.clicked.connect(self._disable_entry)
 
-        note = QLabel(
-            'Enable / Disable available for Run Keys and Startup Folder items.'
-            '  Other types require manual changes.'
-        )
+        note = QLabel(self._mgr.TOGGLE_NOTE)
         note.setStyleSheet('color: #666666; font-size: 10px;')
         bar.addStretch()
         bar.addWidget(note)
@@ -281,7 +278,10 @@ class StartupView(QWidget):
         self._proxy.invalidate()
         n = self._proxy.rowCount()
         self._count_lbl.setText(f'Entries: {n}')
-        self._status_lbl.setText(f'Found {len(entries)} startup entries')
+        warnings = getattr(self._mgr, 'warnings', [])
+        self._status_lbl.setText(f'Found {len(entries)} startup entries'
+                                 + (f'  —  {warnings[0]}' if warnings else ''))
+        self._status_lbl.setToolTip('\n\n'.join(warnings))
         self._scan_btn.setEnabled(True)
         self._scan_btn.setText('Scan System')
         # populate type filter combo
@@ -316,7 +316,7 @@ class StartupView(QWidget):
         e = self._sel()
         if e:
             self._detail.setPlainText(e.detail_text())
-        can_toggle = e is not None and e.location_type in ('Run Key', 'Startup Folder')
+        can_toggle = e is not None and not self._busy and self._mgr.can_toggle(e)
         self._btn_enable.setEnabled(can_toggle and not e.enabled if e else False)
         self._btn_disable.setEnabled(can_toggle and e.enabled if e else False)
 
@@ -328,15 +328,8 @@ class StartupView(QWidget):
 
     def _enable_entry(self) -> None:
         e = self._sel()
-        if not e:
-            return
-        ok, msg = self._mgr.enable_entry(e)
-        if ok:
-            e.enabled = True
-            self._model.notify_changed()
-            self._on_sel()
-        else:
-            QMessageBox.warning(self, 'Enable Failed', msg)
+        if e:
+            self._toggle(e, True)
 
     def _disable_entry(self) -> None:
         e = self._sel()
@@ -348,10 +341,21 @@ class StartupView(QWidget):
             QMessageBox.Yes | QMessageBox.No,
         ) != QMessageBox.Yes:
             return
-        ok, msg = self._mgr.disable_entry(e)
+        self._toggle(e, False)
+
+    def _toggle(self, e: StartupEntry, enable: bool) -> None:
+        # Runs in the background: on macOS it may wait for a password dialog or osascript.
+        self._busy = True
+        self._on_sel()
+        fn = self._mgr.enable_entry if enable else self._mgr.disable_entry
+        call_async(self, lambda: fn(e), lambda res: self._on_toggled(e, enable, res))
+
+    def _on_toggled(self, e: StartupEntry, enable: bool, res) -> None:
+        ok, msg = res
+        self._busy = False
         if ok:
-            e.enabled = False
+            e.enabled = enable
             self._model.notify_changed()
-            self._on_sel()
-        else:
-            QMessageBox.warning(self, 'Disable Failed', msg)
+        elif msg != 'cancelled':
+            QMessageBox.warning(self, 'Enable Failed' if enable else 'Disable Failed', msg)
+        self._on_sel()

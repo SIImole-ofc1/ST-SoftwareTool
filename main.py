@@ -1,4 +1,14 @@
-import sys, os, ctypes
+import sys
+
+# "<app> --proc-monitor": run only the Task Manager's process collector (the macOS build
+# has no separate proc_monitor binary). Handled before any Qt import so no window, Dock
+# icon or UI code is involved.
+if __name__ == "__main__" and "--proc-monitor" in sys.argv[1:]:
+    from core.proc_monitor import main as _proc_monitor_main
+    _proc_monitor_main()
+    sys.exit(0)
+
+import os, ctypes
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtCore import QTimer
@@ -64,8 +74,33 @@ def _smoke_test(app, window, seconds: float) -> None:
         window.gui.cleanup()
         os._exit(1 if errors else 0)
 
+    # ST_SMOKE_SHOTS=<folder>: afterwards show each tab for a few seconds (so lists that
+    # load in the background can fill) and save a screenshot of the window, then quit.
+    shots_dir = os.environ.get("ST_SMOKE_SHOTS")
+
+    def shoot(i: int = 0):
+        import re
+        tabs = window.gui.tabs
+        if i >= tabs.count():
+            finish()
+            return
+        tabs.setCurrentIndex(i)
+
+        def grab():
+            name = re.sub(r'[^A-Za-z0-9]+', '-', tabs.tabText(i)).strip('-').lower()
+            path = os.path.join(shots_dir, f"tab-{i:02d}-{name}.png")
+            window.grab().save(path)
+            print(f"SMOKE screenshot {path}", flush=True)
+            shoot(i + 1)
+        QTimer.singleShot(4000, grab)
+
     QTimer.singleShot(1500, visit_tabs)
-    QTimer.singleShot(int(seconds * 1000), finish)
+    if shots_dir:
+        os.makedirs(shots_dir, exist_ok=True)
+        window.resize(1280, 800)
+        QTimer.singleShot(int(seconds * 1000), shoot)
+    else:
+        QTimer.singleShot(int(seconds * 1000), finish)
 
 
 def main():

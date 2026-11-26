@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from core.osinfo import IS_WINDOWS, NO_WINDOW
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW, mac_app_bundle
 
 try:
     import psutil as _psutil
@@ -27,16 +27,24 @@ except Exception:
 
 
 def _find_monitor_cmd() -> List[str]:
-    """Locate proc_monitor — compiled exe (Nuitka build) or source (dev)."""
+    """Locate proc_monitor — compiled exe (Windows build), the app itself (macOS build)
+    or the source file (dev)."""
     # Nuitka places proc_monitor.exe next to ST.exe (sys.executable)
     exe = os.path.join(os.path.dirname(sys.executable), 'proc_monitor.exe')
-    if os.path.exists(exe):
+    if IS_WINDOWS and os.path.exists(exe):
         return [exe]
     # Dev mode: run the source file with the current interpreter
     py = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'proc_monitor.py')
     if os.path.exists(py):
         return [sys.executable, py]
+    # macOS app: the main binary runs the collector when started with --proc-monitor
+    if IS_MAC and mac_app_bundle():
+        return [sys.executable, '--proc-monitor']
     return []
+
+
+# macOS processes that must never be ended: doing so crashes or logs out the Mac
+_MAC_PROTECTED = {'kernel_task', 'launchd', 'WindowServer', 'loginwindow'}
 
 
 # ── data classes ──────────────────────────────────────────────────────────────
@@ -258,13 +266,10 @@ class TaskManagerBackend:
         self._history.clear()
 
     def kill_process(self, pid: int) -> Tuple[bool, str]:
+        """End a process. Error codes: 'already_gone', 'access_denied', 'protected';
+        anything else is a message to show."""
         if not IS_WINDOWS:
-            try:
-                import psutil
-                psutil.Process(pid).kill()
-                return True, ''
-            except Exception as exc:
-                return False, str(exc)
+            return self._end_posix(pid)
         try:
             r = subprocess.run(
                 ['taskkill', '/f', '/pid', str(pid)],
@@ -276,6 +281,63 @@ class TaskManagerBackend:
             return False, (r.stderr.strip() or r.stdout.strip())
         except Exception as exc:
             return False, str(exc)
+
+    @staticmethod
+    def _end_posix(pid: int, grace: float = 3.0) -> Tuple[bool, str]:
+        """Ask the process to quit (SIGTERM, lets it save and clean up); if it is still
+        running after `grace` seconds, force it (SIGKILL) — like Quit / Force Quit."""
+        if _psutil is None:
+            return False, 'psutil is not available'
+        if pid <= 1 or pid == os.getpid():
+            return False, 'protected'
+        try:
+            proc = _psutil.Process(pid)
+            if IS_MAC and proc.name() in _MAC_PROTECTED:
+                return False, 'protected'
+            proc.terminate()
+        except _psutil.NoSuchProcess:
+            return False, 'already_gone'
+        except _psutil.AccessDenied:
+            return False, 'access_denied'
+        try:
+            proc.wait(timeout=grace)
+            return True, ''
+        except _psutil.TimeoutExpired:
+            pass
+        except _psutil.NoSuchProcess:
+            return True, ''
+        try:
+            proc.kill()
+            proc.wait(timeout=2)
+            return True, ''
+        except _psutil.NoSuchProcess:
+            return True, ''
+        except _psutil.AccessDenied:
+            return False, 'access_denied'
+        except _psutil.TimeoutExpired:
+            return False, 'The process did not exit.'
+
+    @staticmethod
+    def kill_process_as_admin(pid: int) -> Tuple[bool, str]:
+        """macOS: end a process owned by root or another user, after the user enters an
+        administrator password. Returns (False, 'cancelled') if they cancel."""
+        from core.mac_admin import run_as_admin
+        pid = int(pid)   # only a number ever reaches the shell
+        if pid <= 1:
+            return False, 'protected'
+        try:
+            if _psutil is not None and _psutil.Process(pid).name() in _MAC_PROTECTED:
+                return False, 'protected'
+        except _psutil.NoSuchProcess:
+            return False, 'already_gone'
+        except _psutil.AccessDenied:
+            pass
+        # Quit, give it 3 s, then force; succeed if the process is gone either way
+        cmd = (f'/bin/kill -TERM {pid} 2>/dev/null; i=0; '
+               f'while /bin/kill -0 {pid} 2>/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done; '
+               f'/bin/kill -0 {pid} 2>/dev/null && /bin/kill -KILL {pid}; '
+               f'sleep 0.3; ! /bin/kill -0 {pid} 2>/dev/null')
+        return run_as_admin(cmd, f'ST-SoftwareTool wants to end process {pid}.')
 
     def cleanup(self) -> None:
         self.stop_monitor()

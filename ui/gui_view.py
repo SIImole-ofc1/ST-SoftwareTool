@@ -21,17 +21,20 @@ from PySide6.QtGui import QFont, QColor, QBrush
 from core.device_manager import DeviceManager
 from core.performance_monitor import PerformanceMonitor
 from core.task_manager import TaskManagerBackend
+from ui.async_call import call_async
 from ui.graph_widget import UsageGraph
 from ui.task_table import ProcessTableModel, HistoryTableModel, TaskSortProxy
 from ui.antivirus_view import AntivirusView
 from core.osinfo import IS_MAC, IS_WINDOWS
 
-# Windows-only screens (Windows services, registry tweaks, startup entries, Tor VPN)
+# Windows-only screens (Windows services, registry tweaks, Tor VPN)
 if IS_WINDOWS:
     from ui.services_view import ServicesView
-    from ui.startup_view import StartupView
     from ui.device_settings_view import DeviceSettingsView
     from ui.vpn_view import VpnView
+# Advanced Startup has a Windows and a macOS backend
+if IS_WINDOWS or IS_MAC:
+    from ui.startup_view import StartupView
 
 # (column_index, Qt.SortOrder) pairs used by the sort combo
 _TASK_SORT_PROXY = [
@@ -298,7 +301,7 @@ class GUIView(QWidget):
 
         # Lazy-loaded tab widgets (created once, reused)
         self._svc_view        = ServicesView(self)       if IS_WINDOWS else None
-        self._startup_view    = StartupView(self)        if IS_WINDOWS else None
+        self._startup_view    = StartupView(self)        if (IS_WINDOWS or IS_MAC) else None
         self._dev_settings    = DeviceSettingsView(self) if IS_WINDOWS else None
         self._antivirus_view  = AntivirusView(self)
         self._vpn_view        = VpnView(self)            if IS_WINDOWS else None
@@ -1010,15 +1013,41 @@ class GUIView(QWidget):
             QMessageBox.Yes | QMessageBox.No,
         ) != QMessageBox.Yes:
             return
-        ok, err = self._task_backend.kill_process(p.pid)
-        if not ok:
-            if err == "already_gone":
-                QMessageBox.information(self, "End Task", "Process has already ended.")
-            elif err == "access_denied":
-                QMessageBox.critical(self, "End Task",
-                    "Access denied.\nTry running ST-SoftwareTool as Administrator.")
-            else:
-                QMessageBox.critical(self, "End Task", err)
+        # Ending can take a few seconds (the process is given time to quit cleanly first),
+        # so it runs in the background and the button stays off meanwhile.
+        self._task_kill_btn.setEnabled(False)
+        call_async(self, lambda: self._task_backend.kill_process(p.pid),
+                   lambda res: self._on_task_ended(p.name, p.pid, res, as_admin=False))
+
+    def _on_task_ended(self, name: str, pid: int, res, as_admin: bool):
+        ok, err = res
+        self._task_kill_btn.setEnabled(bool(self._proc_view.selectionModel().selectedRows()))
+        if ok:
+            self._task_worker.wake_now()
+            return
+        if err == "already_gone":
+            QMessageBox.information(self, "End Task", "Process has already ended.")
+        elif err == "protected":
+            QMessageBox.warning(self, "End Task",
+                f"'{name}' is a core part of the operating system and can't be ended here.\n\n"
+                "Ending it would crash or log out the computer.")
+        elif err == "cancelled":
+            pass
+        elif err == "access_denied" and IS_MAC and not as_admin:
+            if QMessageBox.question(
+                self, "End Task",
+                f"'{name}' belongs to macOS or another user.\n\n"
+                "End it with an administrator password?",
+                QMessageBox.Yes | QMessageBox.No,
+            ) == QMessageBox.Yes:
+                self._task_kill_btn.setEnabled(False)
+                call_async(self, lambda: self._task_backend.kill_process_as_admin(pid),
+                           lambda r: self._on_task_ended(name, pid, r, as_admin=True))
+        elif err == "access_denied":
+            QMessageBox.critical(self, "End Task",
+                "Access denied.\nTry running ST-SoftwareTool as Administrator.")
+        else:
+            QMessageBox.critical(self, "End Task", f"Could not end '{name}'.\n\n{err}")
 
     def _clear_task_history(self):
         self._task_backend.clear_history()

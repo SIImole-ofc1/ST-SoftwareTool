@@ -28,16 +28,18 @@ except ImportError:
 
 
 class StartupEntry:
-    __slots__ = ('name', 'command', 'location', 'location_type', 'enabled', 'note')
+    __slots__ = ('name', 'command', 'location', 'location_type', 'enabled', 'note', 'extra')
 
     def __init__(self, name: str, command: str, location: str,
-                 location_type: str, enabled: bool = True, note: str = ''):
+                 location_type: str, enabled: bool = True, note: str = '',
+                 extra: Optional[dict] = None):
         self.name          = name
         self.command       = command
         self.location      = location
         self.location_type = location_type
         self.enabled       = enabled
         self.note          = note
+        self.extra         = extra or {}   # platform details needed to toggle the entry
 
     def detail_text(self) -> str:
         return (
@@ -107,6 +109,25 @@ def _clsid_name(clsid: str) -> str:
 # ── scanner ───────────────────────────────────────────────────────────────────
 
 class StartupManager:
+    # Shown by the Advanced Startup screen: legend colours, which types can be toggled, hint
+    TYPE_COLORS = {
+        'Run Key':               '#00cc44',   # normal startup key — green
+        'Startup Folder':        '#44ff88',   # folder shortcut — light green
+        'Scheduled Task':        '#4488ff',   # task — blue
+        'Shell Extension':       '#aaaaaa',   # context menu — grey
+        'Winlogon':              '#ffaa00',   # logon hook — amber
+        'AppInit DLL':           '#ff8800',   # injected into everything — orange
+        'Boot Execute':          '#ff4444',   # very early — bright red
+        'IFEO Debugger':         '#ff6622',   # potential hijack — orange
+        'Browser Helper Object': '#888888',   # BHO — dim grey
+    }
+    TOGGLE_TYPES = ('Run Key', 'Startup Folder')
+    TOGGLE_NOTE  = ('Enable / Disable available for Run Keys and Startup Folder items.'
+                    '  Other types require manual changes.')
+
+    def can_toggle(self, entry: StartupEntry) -> bool:
+        return entry.location_type in self.TOGGLE_TYPES
+
     _RUN_KEYS = [
         ('HKCU', r'SOFTWARE\Microsoft\Windows\CurrentVersion\Run',        'HKCU Run'),
         ('HKCU', r'SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce',    'HKCU RunOnce'),
