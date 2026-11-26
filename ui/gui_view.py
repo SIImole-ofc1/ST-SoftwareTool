@@ -277,6 +277,7 @@ class GUIView(QWidget):
         self._task_backend = TaskManagerBackend()
         self._task_worker  = _TaskWorker(self._task_backend, self)
         self._task_worker.data_ready.connect(self._on_tasks_ready)
+        self._task_sorts_pending = 2   # see _on_tasks_ready
 
         # Performance monitoring
         self._perf      = PerformanceMonitor()
@@ -967,11 +968,12 @@ class GUIView(QWidget):
 
     def _on_tasks_ready(self, procs: list, hist: list):
         if hasattr(self, '_proc_model') and hasattr(self, '_task_count_lbl'):
-            first_load = self._proc_model.rowCount() == 0
             self._proc_model.set_procs(procs)
-            if first_load and procs:
+            if self._task_sorts_pending > 0 and procs:
                 # The proxy doesn't re-sort on its own (rows would jump around), so apply the
-                # chosen sort once the first list has arrived.
+                # chosen sort to the first two lists after the tab opens: the first one has
+                # 0 % CPU everywhere because CPU use needs two samples.
+                self._task_sorts_pending -= 1
                 self._apply_task_sort(self._task_sort_combo.currentIndex())
             self._task_count_lbl.setText(f"Processes: {self._proc_proxy.rowCount()}")
         if hasattr(self, '_hist_model') and hasattr(self, '_hist_count_lbl'):
@@ -980,6 +982,7 @@ class GUIView(QWidget):
 
     def _on_main_tab_changed(self, idx: int):
         if idx == self._task_tab_idx:
+            self._task_sorts_pending = 2
             self._task_worker.activate()
         else:
             self._task_worker.deactivate()
