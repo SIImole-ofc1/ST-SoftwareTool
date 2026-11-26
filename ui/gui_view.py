@@ -266,6 +266,7 @@ class GUIView(QWidget):
     switch_to_terminal = Signal()
     settings_applied   = Signal(str, bool)  # (theme_key, suggestions_enabled)
     settings_changed   = Signal()            # protection / privacy settings changed
+    perf_widget_toggled = Signal(bool)       # macOS: desktop Performance widget on / off
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -568,6 +569,20 @@ class GUIView(QWidget):
             layout.addWidget(msg)
             return tab
 
+        if IS_MAC:
+            top = QHBoxLayout()
+            self._widget_check = QCheckBox("Show as a widget on the desktop")
+            self._widget_check.setToolTip(
+                "A live Performance widget that sits on your desktop behind your windows, "
+                "on every Space.\nIt shows while ST-SoftwareTool is running — turn on "
+                "\"Keep ST-SoftwareTool running in the background\" in Settings to keep it "
+                "after closing this window.")
+            self._widget_check.setChecked(bool(self.manager.settings.get('perf_widget', False)))
+            self._widget_check.toggled.connect(self.perf_widget_toggled.emit)
+            top.addWidget(self._widget_check)
+            top.addStretch()
+            layout.addLayout(top)
+
         # Row 1: CPU  +  GPU
         row1 = QHBoxLayout()
         row1.setSpacing(8)
@@ -679,6 +694,14 @@ class GUIView(QWidget):
             if temp:
                 parts.append(f"{temp}°C")
             self._g_gpu.push(val, "  |  ".join(parts))
+
+    def set_perf_widget_checked(self, on: bool):
+        """Keep the Performance tab's widget checkbox in step with the View menu / widget."""
+        check = getattr(self, '_widget_check', None)
+        if check is not None and check.isChecked() != on:
+            check.blockSignals(True)
+            check.setChecked(on)
+            check.blockSignals(False)
 
     def set_perf_theme(self, theme: str):
         """Propagate a theme change to all live graph widgets and themed sub-views."""

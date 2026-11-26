@@ -11,6 +11,7 @@ from .gui_view import GUIView
 from core.privacy_monitor import PrivacyMonitor
 from core.background_tasks import BackgroundScanner
 from core.updater import APP_VERSION, check_for_update
+from core.osinfo import IS_MAC
 
 
 class MainWindow(QMainWindow):
@@ -31,6 +32,7 @@ class MainWindow(QMainWindow):
         # Instantiate scanner/privacy before building menu (menu references them)
         self._privacy = PrivacyMonitor(self)
         self._scanner = BackgroundScanner(self)
+        self._perf_widget = None   # macOS desktop Performance widget, when shown
 
         self._build_menu()
         self._build_central()
@@ -65,6 +67,10 @@ class MainWindow(QMainWindow):
             self._go_gui()
         else:
             self._go_terminal()
+
+        # Bring back the desktop widget if it was on when the app last ran
+        if IS_MAC and manager.settings.get('perf_widget', False):
+            QTimer.singleShot(800, lambda: self._set_perf_widget(True))
 
     # ── system tray ───────────────────────────────────────────────────────────
 
@@ -250,6 +256,14 @@ class MainWindow(QMainWindow):
         self._fs_action.triggered.connect(self._toggle_fullscreen)
         view_m.addAction(self._fs_action)
 
+        if IS_MAC:
+            view_m.addSeparator()
+            self._widget_action = QAction("Performance Widget on Desktop", self)
+            self._widget_action.setCheckable(True)
+            self._widget_action.setChecked(bool(self.manager.settings.get('perf_widget', False)))
+            self._widget_action.triggered.connect(self._set_perf_widget)
+            view_m.addAction(self._widget_action)
+
         # Tools
         tools_m = mb.addMenu("Tools")
 
@@ -304,6 +318,7 @@ class MainWindow(QMainWindow):
         self.gui.switch_to_terminal.connect(self._go_terminal)
         self.gui.settings_applied.connect(self._on_settings_applied)
         self.gui.settings_changed.connect(self._on_settings_changed)
+        self.gui.perf_widget_toggled.connect(self._set_perf_widget)
         self.stack.addWidget(self.gui)         # index 1
 
     # ── switching ─────────────────────────────────────────────────────────────
@@ -709,7 +724,48 @@ class MainWindow(QMainWindow):
             self._do_cleanup()
             event.accept()
 
+    # ── desktop Performance widget (macOS) ───────────────────────────────────
+
+    def _set_perf_widget(self, on: bool):
+        """Show or remove the desktop Performance widget and remember the choice."""
+        on = bool(on)
+        if self.manager.settings.get('perf_widget', False) != on:
+            self.manager.settings['perf_widget'] = on
+            self._save_settings_quietly()
+        if hasattr(self, '_widget_action'):
+            self._widget_action.setChecked(on)
+        self.gui.set_perf_widget_checked(on)
+
+        if on and self._perf_widget is None:
+            from ui.perf_widget import PerfWidget
+            w = PerfWidget()
+            self.gui._perf_worker.perf_ready.connect(w.set_perf)
+            self.gui._gpu_worker.gpu_ready.connect(w.set_gpu)
+            w.open_requested.connect(self._tray_open)
+            w.remove_requested.connect(lambda: self._set_perf_widget(False))
+            w.moved.connect(self._on_perf_widget_moved)
+            w.place(self.manager.settings.get('perf_widget_pos'))
+            self._perf_widget = w
+            w.show()
+        elif not on and self._perf_widget is not None:
+            self._perf_widget.close()
+            self._perf_widget.deleteLater()
+            self._perf_widget = None
+
+    def _on_perf_widget_moved(self, x: int, y: int):
+        self.manager.settings['perf_widget_pos'] = [x, y]
+        self._save_settings_quietly()
+
+    def _save_settings_quietly(self):
+        try:
+            self.manager.save()
+        except Exception:
+            pass
+
     def _do_cleanup(self):
+        if self._perf_widget is not None:
+            self._perf_widget.close()
+            self._perf_widget = None
         self.gui.cleanup()
         self._scanner.stop()
         self._privacy.shutdown()

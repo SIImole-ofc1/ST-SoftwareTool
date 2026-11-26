@@ -175,7 +175,7 @@ jobs:
           echo "bin=$bin" >> "$GITHUB_ENV"
           echo "Launching $bin"
           set -o pipefail
-          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots ST_SMOKE_HTTPS=1 "$bin" | tee build/smoke.log
+          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots ST_SMOKE_HTTPS=1 ST_SMOKE_WIDGET=1 "$bin" | tee build/smoke.log
           # The app must recognise its own bundle (Task Manager, Open at Login, updates use it)
           grep -q "bundle='.*/ST-SoftwareTool.app'" build/smoke.log
           # HTTPS must use the certificates shipped inside the app, not a file that only exists

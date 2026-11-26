@@ -225,8 +225,18 @@ def test_startup():
     print('types found:', sorted({e.location_type for e in entries}))
 
 
+def test_gpu():
+    section('Performance: GPU on macOS')
+    from core.performance_monitor import PerformanceMonitor
+    mon = PerformanceMonitor()
+    value = mon.gpu_percent()
+    print('GPU utilisation:', value, '| GPU name:', mon.gpu_details().get('name'))
+    # Virtual Macs may have no GPU statistics; real Macs report 0-100
+    check('GPU reading is a percentage or unavailable', value is None or 0 <= value <= 100, value)
+
+
 if __name__ == '__main__':
-    for test in (test_task_manager, test_startup):
+    for test in (test_task_manager, test_startup, test_gpu):
         try:
             test()
         except Exception as exc:  # report and carry on with the next group

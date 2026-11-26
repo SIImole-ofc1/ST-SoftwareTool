@@ -141,6 +141,41 @@ def _smoke_test(app, window, seconds: float) -> None:
             shoot(i + 1)
         QTimer.singleShot(4000, grab)
 
+    # ST_SMOKE_WIDGET=1 (macOS): turn on the desktop Performance widget, check macOS put it at
+    # desktop level, and screenshot it half under the app window (it must sit behind it).
+    def check_widget():
+        import subprocess
+        from ui.perf_widget import pin_to_desktop
+        w = window._perf_widget
+        if w is None:
+            errors.append("Desktop widget did not open")
+            return
+        expected = None
+        try:
+            import ctypes, ctypes.util
+            cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library('CoreGraphics'))
+            cg.CGWindowLevelForKey.restype = ctypes.c_int32
+            expected = cg.CGWindowLevelForKey(18) + 1
+        except Exception:
+            pass
+        level = pin_to_desktop(w)
+        print(f"SMOKE widget level={level} expected={expected} size={w.width()}x{w.height()}",
+              flush=True)
+        if level is None or level != expected:
+            errors.append(f"Desktop widget not at desktop level ({level} != {expected})")
+        if shots_dir:
+            w.grab().save(os.path.join(shots_dir, "widget.png"))
+            subprocess.run(['screencapture', '-x', os.path.join(shots_dir, 'desktop-with-widget.png')],
+                           timeout=20)
+
+    if os.environ.get("ST_SMOKE_WIDGET") and sys.platform == "darwin":
+        def open_widget():
+            window._set_perf_widget(True)
+            g = window.frameGeometry()
+            window._perf_widget.move(g.right() - 140, g.top() + 120)   # half under the window
+        QTimer.singleShot(1000, open_widget)
+        QTimer.singleShot(5500, check_widget)
+
     QTimer.singleShot(1500, visit_tabs)
     if shots_dir:
         os.makedirs(shots_dir, exist_ok=True)

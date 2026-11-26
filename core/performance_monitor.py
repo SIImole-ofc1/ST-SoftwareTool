@@ -2,7 +2,7 @@
 Accurate hardware monitoring using psutil (CPU/RAM/Disk/Net) and
 Windows WMI via PowerShell for GPU utilization.
 """
-import time, os, shutil
+import time, os, re, shutil
 import subprocess
 from typing import List, Optional, Tuple, Dict
 from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
@@ -154,7 +154,10 @@ class PerformanceMonitor:
     _nvidia_smi: Optional[bool] = None
 
     def gpu_percent(self) -> Optional[float]:
-        """GPU utilisation %.  Tries nvidia-smi first, then WMI. None = unavailable."""
+        """GPU utilisation %.  Windows: nvidia-smi, then WMI.  macOS: the GPU driver's
+        "Device Utilization %" from the I/O Registry.  None = unavailable."""
+        if IS_MAC:
+            return self._gpu_percent_mac()
         if not IS_WINDOWS:
             return None
         # ── nvidia-smi path (NVIDIA GPUs) ──
@@ -197,6 +200,37 @@ class PerformanceMonitor:
             pass
         return None
 
+    @staticmethod
+    def _gpu_percent_mac() -> Optional[float]:
+        # Apple Silicon (AGXAccelerator) and Intel/AMD GPUs all publish PerformanceStatistics
+        # with "Device Utilization %" on their IOAccelerator; readable without admin rights.
+        try:
+            r = subprocess.run(['/usr/sbin/ioreg', '-r', '-d', '1', '-w', '0', '-c', 'IOAccelerator'],
+                               capture_output=True, text=True, timeout=4)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        values = [int(v) for v in re.findall(r'"Device Utilization %"\s*=\s*(\d+)', r.stdout)]
+        return float(min(max(values), 100)) if values else None
+
+    _mac_gpu_name: Optional[str] = None
+
+    @classmethod
+    def _gpu_name_mac(cls) -> str:
+        """GPU model from System Information, looked up once (it takes about a second)."""
+        if cls._mac_gpu_name is None:
+            name = "GPU"
+            try:
+                import json
+                r = subprocess.run(['/usr/sbin/system_profiler', 'SPDisplaysDataType', '-json'],
+                                   capture_output=True, text=True, timeout=20)
+                gpus = json.loads(r.stdout).get('SPDisplaysDataType') or []
+                if gpus:
+                    name = gpus[0].get('sppci_model') or gpus[0].get('_name') or name
+            except Exception:
+                pass
+            cls._mac_gpu_name = name
+        return cls._mac_gpu_name
+
     def gpu_details(self) -> Dict:
         """
         Returns dict with name, vram_total_gb, vram_used_gb, temp_c
@@ -204,6 +238,9 @@ class PerformanceMonitor:
         """
         result = {"name": "Unknown GPU", "vram_total_gb": 0.0,
                   "vram_used_gb": 0.0, "temp_c": 0}
+        if IS_MAC:
+            result["name"] = self._gpu_name_mac()
+            return result
         if not IS_WINDOWS:
             return result
         if self._nvidia_smi is not False:
