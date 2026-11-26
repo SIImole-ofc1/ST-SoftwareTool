@@ -1,11 +1,13 @@
 import os
+import time
 from PySide6.QtWidgets import (
     QMainWindow, QStackedWidget, QMessageBox,
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialogButtonBox,
     QSystemTrayIcon, QMenu, QApplication,
 )
-from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap
+from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap, QCursor
 from PySide6.QtCore import Qt, QTimer
+from core import mac_appkit
 from .terminal_widget import TerminalWidget
 from .gui_view import GUIView
 from core.privacy_monitor import PrivacyMonitor
@@ -72,11 +74,26 @@ class MainWindow(QMainWindow):
         if IS_MAC and manager.settings.get('perf_widget', False):
             QTimer.singleShot(800, lambda: self._set_perf_widget(True))
 
+        if IS_MAC:
+            # Reopening the app (Dock, Launchpad, Finder) shows the window again
+            QApplication.instance().applicationStateChanged.connect(self._on_app_state)
+            self._reopen_block_until = time.monotonic() + 3.0   # ignore the launch itself
+
     # ── system tray ───────────────────────────────────────────────────────────
 
     def _build_tray(self):
         self._tray = QSystemTrayIcon(self._app_icon, self)
         self._tray.setToolTip("ST-SoftwareTool")
+        self._popup = None
+
+        if IS_MAC:
+            # macOS: the ST logo in the menu bar opens a Stats-style popup instead of a menu
+            self._tray.activated.connect(self._on_tray_activated)
+            self._tray.setVisible(bool(self.manager.settings.get('menubar_icon', True)))
+            self._popup_timer = QTimer(self)
+            self._popup_timer.setInterval(1000)
+            self._popup_timer.timeout.connect(self._refresh_popup)
+            return
 
         menu = QMenu()
         a_open  = QAction("Open ST-SoftwareTool", self)
@@ -96,13 +113,109 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     def _tray_open(self):
+        if IS_MAC:
+            mac_appkit.set_activation_policy(mac_appkit.REGULAR)   # Dock icon back
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        if IS_MAC:
+            mac_appkit.activate_app()
 
     def _on_tray_activated(self, reason):
+        if IS_MAC:
+            self._toggle_popup()
+            return
         if reason == QSystemTrayIcon.DoubleClick:
             self._tray_open()
+
+    # ── macOS menu-bar popup ──────────────────────────────────────────────────
+
+    def _get_popup(self):
+        if self._popup is None:
+            from ui.menubar_popup import MenuBarPopup
+            p = MenuBarPopup(APP_VERSION)
+            p.open_app.connect(self._tray_open)
+            p.quit_app.connect(self._quit_app)
+            p.widget_toggled.connect(self._set_perf_widget)
+            p.vpn_clicked.connect(self._popup_vpn_clicked)
+            self.gui._perf_worker.perf_ready.connect(p.panel.set_perf)
+            self.gui._gpu_worker.gpu_ready.connect(p.panel.set_gpu)
+            self._popup = p
+        return self._popup
+
+    def _toggle_popup(self):
+        popup = self._get_popup()
+        if popup.isVisible():
+            popup.hide()
+            return
+        if time.monotonic() - popup.closed_at < 0.3:
+            return   # this click on the icon is what just closed it
+        self._refresh_popup()
+        popup.show_below(self._tray.geometry())
+        self._popup_timer.start()
+
+    def _refresh_popup(self):
+        popup = self._popup
+        if popup is None or not popup.isVisible():
+            if hasattr(self, '_popup_timer'):
+                self._popup_timer.stop()
+            if popup is None:
+                return
+        popup.set_widget_checked(bool(self.manager.settings.get('perf_widget', False)))
+        view = getattr(self.gui, '_vpn_view', None)
+        if view is None:
+            popup.set_vpn(False)
+        else:
+            popup.set_vpn(True, view.is_connected(), view.is_busy())
+
+    def _popup_vpn_clicked(self):
+        view = getattr(self.gui, '_vpn_view', None)
+        if view is not None:
+            view.toggle_from_menu_bar()
+            self._refresh_popup()
+
+    def _set_menubar_icon(self, on: bool):
+        self.manager.settings['menubar_icon'] = bool(on)
+        self._save_settings_quietly()
+        self._tray.setVisible(bool(on))
+        if not on and self._popup is not None:
+            self._popup.hide()
+
+    # ── macOS: running in the menu bar while the window is closed ────────────
+
+    def _keeps_running_when_closed(self) -> bool:
+        s = self.manager.settings
+        if s.get('run_in_background', False):
+            return True
+        # macOS: like Stats, closing the window leaves the app in the menu bar (and keeps the
+        # desktop widget); ⌘Q or Quit in the popup really quits.
+        return IS_MAC and (s.get('menubar_icon', True) or s.get('perf_widget', False))
+
+    def enter_background(self):
+        """Hide the window and (macOS) the Dock icon; keep running in the menu bar."""
+        self.hide()
+        if IS_MAC:
+            mac_appkit.set_activation_policy(mac_appkit.ACCESSORY)
+
+    def _on_app_state(self, state):
+        # Opening the app again (Dock, Launchpad, Finder) while only the menu bar part runs
+        # makes macOS re-activate this instance: show the window again.
+        if state == Qt.ApplicationActive and self.isHidden():
+            QTimer.singleShot(250, self._maybe_reopen)
+
+    def _maybe_reopen(self):
+        if not self.isHidden() or time.monotonic() < self._reopen_block_until:
+            return
+        popup = self._popup
+        if popup is not None and (popup.isVisible() or time.monotonic() - popup.closed_at < 1.0):
+            return   # activated by the menu-bar popup
+        if QApplication.activePopupWidget() is not None:
+            return   # e.g. the widget's right-click menu
+        w = self._perf_widget
+        if w is not None and w.frameGeometry().contains(QCursor.pos()):
+            return   # a click on the desktop widget
+        self._tray_open()
+
 
     def _notify(self, title: str, msg: str,
                 icon=QSystemTrayIcon.Information, ms: int = 5000):
@@ -263,6 +376,12 @@ class MainWindow(QMainWindow):
             self._widget_action.setChecked(bool(self.manager.settings.get('perf_widget', False)))
             self._widget_action.triggered.connect(self._set_perf_widget)
             view_m.addAction(self._widget_action)
+
+            self._menubar_action = QAction("Show ST-SoftwareTool in Menu Bar", self)
+            self._menubar_action.setCheckable(True)
+            self._menubar_action.setChecked(bool(self.manager.settings.get('menubar_icon', True)))
+            self._menubar_action.triggered.connect(self._set_menubar_icon)
+            view_m.addAction(self._menubar_action)
 
         # Tools
         tools_m = mb.addMenu("Tools")
@@ -711,15 +830,28 @@ class MainWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event):
-        if not self._force_quit and self.manager.settings.get('run_in_background', False):
+        # macOS: the red close button sends a spontaneous close; ⌘Q, Dock › Quit and logout
+        # ask every window to close programmatically — those must really quit.
+        quitting = IS_MAC and not event.spontaneous()
+        if not self._force_quit and not quitting and self._keeps_running_when_closed():
             event.ignore()
-            self.hide()
-            self._notify(
-                "ST-SoftwareTool",
-                "Running in the background.\n"
-                "Right-click the tray icon to open or exit.",
-                QSystemTrayIcon.Information, 4000,
-            )
+            self.enter_background()
+            if not IS_MAC:
+                self._notify(
+                    "ST-SoftwareTool",
+                    "Running in the background.\n"
+                    "Right-click the tray icon to open or exit.",
+                    QSystemTrayIcon.Information, 4000,
+                )
+            elif not self.manager.settings.get('menubar_hint_shown', False):
+                self.manager.settings['menubar_hint_shown'] = True
+                self._save_settings_quietly()
+                self._notify(
+                    "ST-SoftwareTool is still running",
+                    "It stays in the menu bar (and keeps the desktop widget). Click the ST logo "
+                    "at the top for quick stats, or press ⌘Q to quit.",
+                    QSystemTrayIcon.Information, 6000,
+                )
         else:
             self._do_cleanup()
             event.accept()
@@ -735,6 +867,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_widget_action'):
             self._widget_action.setChecked(on)
         self.gui.set_perf_widget_checked(on)
+        if self._popup is not None:
+            self._popup.set_widget_checked(on)
+        if IS_MAC and self.manager.settings.get('start_with_windows', False):
+            # At login, start quietly in the menu bar when the widget is on (no window)
+            GUIView._set_startup_mac(True, background=on)
 
         if on and self._perf_widget is None:
             from ui.perf_widget import PerfWidget
@@ -748,7 +885,7 @@ class MainWindow(QMainWindow):
             self._perf_widget = w
             w.show()
         elif not on and self._perf_widget is not None:
-            self._perf_widget.close()
+            self._perf_widget.dispose()
             self._perf_widget.deleteLater()
             self._perf_widget = None
 
@@ -764,8 +901,10 @@ class MainWindow(QMainWindow):
 
     def _do_cleanup(self):
         if self._perf_widget is not None:
-            self._perf_widget.close()
+            self._perf_widget.dispose()
             self._perf_widget = None
+        if self._popup is not None:
+            self._popup.hide()
         self.gui.cleanup()
         self._scanner.stop()
         self._privacy.shutdown()

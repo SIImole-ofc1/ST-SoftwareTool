@@ -1441,7 +1441,11 @@ class GUIView(QWidget):
         self.manager.settings['auto_vpn_startup']   = self.chk_auto_vpn.isChecked()
         want_startup = self.chk_start_windows.isChecked()
         self.manager.settings['start_with_windows'] = want_startup
-        self._set_startup_registry(want_startup)
+        if IS_MAC:
+            self._set_startup_mac(want_startup,
+                                  background=bool(self.manager.settings.get('perf_widget', False)))
+        else:
+            self._set_startup_registry(want_startup)
 
         self.settings_applied.emit(t, sugg)
         self.settings_changed.emit()
@@ -1451,8 +1455,9 @@ class GUIView(QWidget):
             pass
 
     @staticmethod
-    def _set_startup_mac(enable: bool) -> None:
-        """macOS: a LaunchAgent opens the app at login."""
+    def _set_startup_mac(enable: bool, background: bool = False) -> None:
+        """macOS: a LaunchAgent opens the app at login. background=True starts it quietly in
+        the menu bar (no window), e.g. so only the desktop widget appears."""
         from core.osinfo import mac_app_bundle
         agent = os.path.expanduser('~/Library/LaunchAgents/com.stsoftwaretool.app.plist')
         if not enable:
@@ -1463,6 +1468,8 @@ class GUIView(QWidget):
             return
         bundle = mac_app_bundle()
         args = ['/usr/bin/open', bundle] if bundle else [sys.executable, os.path.abspath(sys.argv[0])]
+        if background:
+            args += ['--args', '--background'] if bundle else ['--background']
         import plistlib
         try:
             os.makedirs(os.path.dirname(agent), exist_ok=True)

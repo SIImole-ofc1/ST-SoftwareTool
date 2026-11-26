@@ -1,16 +1,14 @@
-"""Desktop Performance widget (macOS).
+"""Desktop Performance widget (macOS), and the live performance card it is drawn with.
 
-A small macOS-style widget that sits on the desktop — above the wallpaper and desktop icons,
-below every window, on all Spaces — and shows live CPU, RAM, GPU, SSD and network use.
-
-It is an ST-SoftwareTool window, not a WidgetKit gallery widget: gallery widgets may only
-refresh every 15+ minutes, this one updates every second. It is shown while the app runs
-(including when it keeps running in the background).
+PerfPanel  — the card itself: CPU, RAM, GPU, SSD bars and network speeds. Also shown in the
+             menu-bar popup.
+PerfWidget — the card as a desktop widget: sits above the wallpaper and desktop icons, below
+             every window, on all Spaces. It is an ST-SoftwareTool window, not a WidgetKit
+             gallery widget: those may refresh only every 15+ minutes, this one every second.
+             It stays while the app runs, also when the app only lives in the menu bar.
 """
 from __future__ import annotations
 
-import ctypes
-import ctypes.util
 import os
 from typing import Optional
 
@@ -18,7 +16,7 @@ from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QMenu, QWidget
 
-from core.osinfo import IS_MAC
+from core import mac_appkit
 
 try:
     import psutil
@@ -54,64 +52,32 @@ def _fmt_rate(kb_s: float) -> str:
     return f'{kb_s / 1024:.1f} MB/s' if kb_s >= 1024 else f'{kb_s:.0f} KB/s'
 
 
+def is_dark() -> bool:
+    """The system's light / dark appearance (macOS widgets follow it, not the app theme)."""
+    try:
+        return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    except AttributeError:
+        return True
+
+
 def pin_to_desktop(widget: QWidget) -> Optional[int]:
-    """macOS: move the widget's window to desktop level (just above the desktop icons, below
-    all windows), keep it on every Space and out of Mission Control / window cycling.
-    Uses the Objective-C runtime through ctypes. Returns the window level now in effect."""
-    if not IS_MAC:
-        return None
-    try:
-        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
-    except (OSError, TypeError):
-        return None
-    objc.sel_registerName.restype = ctypes.c_void_p
-    objc.sel_registerName.argtypes = [ctypes.c_char_p]
-    address = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
-
-    def send(restype, *argtypes):
-        # objc_msgSend called through an exact prototype (required on Apple Silicon)
-        return ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)(address)
-
-    sel = objc.sel_registerName
-    window = send(ctypes.c_void_p)(ctypes.c_void_p(int(widget.winId())), sel(b'window'))
-    if not window:
-        return None
-    try:
-        cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library('CoreGraphics'))
-        cg.CGWindowLevelForKey.restype = ctypes.c_int32
-        cg.CGWindowLevelForKey.argtypes = [ctypes.c_int32]
-        icon_level = cg.CGWindowLevelForKey(18)        # kCGDesktopIconWindowLevelKey
-    except (OSError, TypeError, AttributeError):
-        icon_level = -2147483603                        # its documented value
-    send(None, ctypes.c_long)(window, sel(b'setLevel:'), icon_level + 1)
-    # CanJoinAllSpaces | Stationary | IgnoresCycle
-    send(None, ctypes.c_ulong)(window, sel(b'setCollectionBehavior:'), 1 | 16 | 64)
-    return int(send(ctypes.c_long)(window, sel(b'level')))
+    """macOS: put the widget's window at desktop level. Returns the level now in effect."""
+    return mac_appkit.pin_to_desktop(int(widget.winId()))
 
 
-class PerfWidget(QWidget):
-    open_requested   = Signal()          # double-click / "Open ST-SoftwareTool"
-    remove_requested = Signal()          # "Remove Widget"
-    moved            = Signal(int, int)  # dropped at a new position
+class PerfPanel(QWidget):
+    """Live performance card. Feed it with set_perf() / set_gpu()."""
 
-    def __init__(self):
-        super().__init__(None, Qt.Window | Qt.FramelessWindowHint
-                         | Qt.WindowDoesNotAcceptFocus | Qt.NoDropShadowWindowHint)
-        self.setWindowTitle('ST-SoftwareTool Performance')
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_QuitOnClose, False)   # never keeps the app alive on its own
-        self.setToolTip('ST-SoftwareTool Performance\n'
-                        'Drag to move · double-click to open the app · right-click for options')
-
+    def __init__(self, parent=None, title: str = 'Performance', framed: bool = True):
+        super().__init__(parent)
+        self._title = title
+        self._framed = framed      # False: no card background (it sits inside the popup's)
         self._cpu: Optional[float] = None
         self._ram: Optional[float] = None
         self._ram_text = ''
         self._gpu: Optional[float] = None
         self._disk: Optional[float] = _disk_percent()
         self._up = self._down = 0.0
-        self._drag: Optional[QPoint] = None
-        self.level: Optional[int] = None
 
         logo = QPixmap(_LOGO)
         self._logo = (logo.scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -163,39 +129,10 @@ class PerfWidget(QWidget):
     def _fit_height(self) -> None:
         self.setFixedSize(_W, _PAD + _HEADER_H + len(self._rows()) * _ROW_H + _NET_H + _PAD)
 
-    # ── placement ─────────────────────────────────────────────────────────────
-
-    def place(self, pos) -> None:
-        """Move to a saved [x, y] if it is still on a screen, else top-right of the main screen."""
-        if pos and len(pos) == 2:
-            point = QPoint(int(pos[0]), int(pos[1]))
-            if QGuiApplication.screenAt(point + QPoint(_W // 2, 20)) is not None:
-                self.move(point)
-                return
-        area = QGuiApplication.primaryScreen().availableGeometry()
-        self.move(area.right() - _W - 24, area.top() + 24)
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        QTimer.singleShot(0, self._pin)    # after Qt has set up the native window
-
-    def _pin(self) -> None:
-        try:
-            self.level = pin_to_desktop(self)
-        except Exception:
-            self.level = None
-
     # ── drawing ───────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _is_dark() -> bool:
-        try:
-            return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
-        except AttributeError:
-            return True
-
     def paintEvent(self, _event) -> None:
-        dark = self._is_dark()
+        dark = is_dark()
         bg     = QColor(28, 28, 30, 218) if dark else QColor(246, 246, 248, 228)
         border = QColor(255, 255, 255, 30) if dark else QColor(0, 0, 0, 28)
         text   = QColor('#f5f5f7') if dark else QColor('#1d1d1f')
@@ -204,11 +141,13 @@ class PerfWidget(QWidget):
 
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        shape = QPainterPath()
-        shape.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), _RADIUS, _RADIUS)
-        p.fillPath(shape, bg)
-        p.setPen(border)
-        p.drawPath(shape)
+        if self._framed:
+            shape = QPainterPath()
+            shape.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+                                 _RADIUS, _RADIUS)
+            p.fillPath(shape, bg)
+            p.setPen(border)
+            p.drawPath(shape)
 
         base = QFont(self.font())
         x, y, right = _PAD, _PAD, _W - _PAD
@@ -223,7 +162,7 @@ class PerfWidget(QWidget):
         title.setBold(True)
         p.setFont(title)
         p.setPen(text)
-        p.drawText(QRectF(tx, y, right - tx, 26), Qt.AlignVCenter | Qt.AlignLeft, 'Performance')
+        p.drawText(QRectF(tx, y, right - tx, 26), Qt.AlignVCenter | Qt.AlignLeft, self._title)
         small = QFont(base)
         small.setPointSizeF(10.5)
         p.setFont(small)
@@ -262,6 +201,49 @@ class PerfWidget(QWidget):
         p.drawText(QRectF(x, y, right - x, _NET_H), Qt.AlignVCenter | Qt.AlignLeft,
                    f'↑ {_fmt_rate(self._up)}     ↓ {_fmt_rate(self._down)}')
         p.end()
+
+
+class PerfWidget(PerfPanel):
+    """The performance card as a desktop widget."""
+    open_requested   = Signal()          # double-click / "Open ST-SoftwareTool"
+    remove_requested = Signal()          # "Remove Widget"
+    moved            = Signal(int, int)  # dropped at a new position
+
+    def __init__(self):
+        super().__init__(None)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint
+                            | Qt.WindowDoesNotAcceptFocus | Qt.NoDropShadowWindowHint)
+        self.setWindowTitle('ST-SoftwareTool Performance')
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_QuitOnClose, False)   # never keeps the app alive on its own
+        self.setToolTip('ST-SoftwareTool Performance\n'
+                        'Drag to move · double-click to open the app · right-click for options')
+        self._drag: Optional[QPoint] = None
+        self.level: Optional[int] = None
+
+    def dispose(self) -> None:
+        """Remove the widget (switched off, or the app quits)."""
+        self.close()
+
+    # ── placement ─────────────────────────────────────────────────────────────
+
+    def place(self, pos) -> None:
+        """Move to a saved [x, y] if it is still on a screen, else top-right of the main screen."""
+        if pos and len(pos) == 2:
+            point = QPoint(int(pos[0]), int(pos[1]))
+            if QGuiApplication.screenAt(point + QPoint(_W // 2, 20)) is not None:
+                self.move(point)
+                return
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        self.move(area.right() - _W - 24, area.top() + 24)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self._pin)    # after Qt has set up the native window
+
+    def _pin(self) -> None:
+        self.level = pin_to_desktop(self)
 
     # ── mouse ─────────────────────────────────────────────────────────────────
 

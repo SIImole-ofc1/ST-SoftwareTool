@@ -32,7 +32,7 @@ jobs:
 
       - name: Screenshots of every tab (Task Manager, Advanced Startup, ...)
         if: always()
-        run: ST_SMOKE_TEST=8 ST_SMOKE_SHOTS=build/shots ST_SMOKE_WIDGET=1 python main.py
+        run: ST_SMOKE_TEST=14 ST_SMOKE_SHOTS=build/shots ST_SMOKE_WIDGET=1 python main.py
 
       - uses: actions/upload-artifact@v4
         if: always()

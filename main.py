@@ -179,9 +179,54 @@ def _smoke_test(app, window, seconds: float) -> None:
             window.setGeometry(saved)
         QTimer.singleShot(1500, capture)
 
+    # The menu-bar popup: open it as a click on the ST logo would, and screenshot it
+    def check_popup():
+        import subprocess
+        window._toggle_popup()
+        popup = window._popup
+        print(f"SMOKE popup visible={popup.isVisible()} at={popup.geometry().getRect()} "
+              f"icon={window._tray.geometry().getRect()}", flush=True)
+        if not popup.isVisible():
+            errors.append("Menu-bar popup did not open")
+        if shots_dir:
+            popup.grab().save(os.path.join(shots_dir, "menubar-popup.png"))
+            subprocess.run(['screencapture', '-x', os.path.join(shots_dir, 'desktop-with-popup.png')],
+                           timeout=20)
+        popup.hide()
+
+    # Closing the window (what the red button does) must keep the app in the menu bar with the
+    # widget, without a Dock icon; opening the app again must bring the window back.
+    def check_background():
+        import subprocess
+        from core import mac_appkit
+        from core.osinfo import mac_app_bundle
+        window.enter_background()
+        app.processEvents()
+        policy = mac_appkit.activation_policy()
+        widget_up = window._perf_widget is not None and window._perf_widget.isVisible()
+        print(f"SMOKE background hidden={window.isHidden()} dock_policy={policy} "
+              f"widget_visible={widget_up}", flush=True)
+        if not window.isHidden() or policy != mac_appkit.ACCESSORY or not widget_up:
+            errors.append("Closing the window did not leave the app in the menu bar with the widget")
+        bundle = mac_app_bundle()
+        if bundle:
+            subprocess.Popen(['/usr/bin/open', bundle])   # like a click in Launchpad / Finder
+        else:
+            window._tray_open()                            # running from source: no bundle
+
+        def after_reopen():
+            policy = mac_appkit.activation_policy()
+            print(f"SMOKE reopen visible={window.isVisible()} dock_policy={policy} "
+                  f"via={'open ' + bundle if bundle else 'tray'}", flush=True)
+            if not window.isVisible() or policy != mac_appkit.REGULAR:
+                errors.append("Opening the app again did not show the window")
+        QTimer.singleShot(3000, after_reopen)
+
     if os.environ.get("ST_SMOKE_WIDGET") and sys.platform == "darwin":
         QTimer.singleShot(1000, lambda: window._set_perf_widget(True))
         QTimer.singleShot(4000, check_widget)
+        QTimer.singleShot(7000, check_popup)
+        QTimer.singleShot(9000, check_background)
 
     QTimer.singleShot(1500, visit_tabs)
     if shots_dir:
@@ -217,7 +262,10 @@ def main():
     manager   = AppManager()
     processor = CommandProcessor(manager)
     window    = MainWindow(manager, processor)
-    window.show()
+    if sys.platform == "darwin" and "--background" in sys.argv[1:]:
+        window.enter_background()   # started at login: menu bar + desktop widget, no window
+    else:
+        window.show()
 
     smoke = os.environ.get("ST_SMOKE_TEST")
     if smoke:
