@@ -43,6 +43,8 @@ def mac_app_bundle() -> str | None:
     marker = '.app/Contents/MacOS/'
     for path in (own_executable(), os.path.realpath(sys.executable)):
         i = path.find(marker)
-        if i != -1:
+        # Only our own app binary counts: from source, the interpreter itself runs inside
+        # Python.app, which must never be mistaken for (and "updated" as) this app.
+        if i != -1 and os.path.basename(path).startswith('ST-SoftwareTool'):
             return path[:i + 4]
     return None

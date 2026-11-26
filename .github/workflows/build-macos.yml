@@ -172,7 +172,10 @@ jobs:
           bin=$(find build/ST-SoftwareTool.app/Contents/MacOS -maxdepth 1 -type f -perm -u+x -name 'ST-SoftwareTool*' | head -n 1)
           echo "bin=$bin" >> "$GITHUB_ENV"
           echo "Launching $bin"
-          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots "$bin"
+          set -o pipefail
+          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots "$bin" | tee build/smoke.log
+          # The app must recognise its own bundle (Task Manager, Open at Login, updates use it)
+          grep -q "bundle='.*/ST-SoftwareTool.app'" build/smoke.log
 
       - name: Task Manager collector (packaged app)
         # The Task Manager runs the app binary with --proc-monitor to list processes

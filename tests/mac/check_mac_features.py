@@ -49,6 +49,11 @@ def gone(pid):
 # ── Task Manager ──────────────────────────────────────────────────────────────
 
 def test_task_manager():
+    section('Running from source')
+    from core.osinfo import mac_app_bundle
+    check("Python.app is not mistaken for the app bundle (updater safety)", mac_app_bundle() is None,
+          mac_app_bundle())
+
     section('Task Manager: process list')
     b = TaskManagerBackend()
     check('collector command found', bool(b._cmd), b._cmd)
