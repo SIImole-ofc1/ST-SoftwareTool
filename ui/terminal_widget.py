@@ -87,7 +87,7 @@ _BANNER = """\
   ║   ██████╗ ████████╗                              ║
   ║  ██╔════╝    ██╔══╝                              ║
   ║   ╚█████╗    ██║    ST-SoftwareTool  v1.0        ║
-  ║    ╚═══██╗   ██║    SoftwareTool for Windows     ║
+  ║    ╚═══██╗   ██║    For Windows and macOS        ║
   ║  ██████╔╝    ██║                                 ║
   ║  ╚═════╝     ╚═╝                                 ║
   ║                                                  ║

@@ -728,11 +728,11 @@ class MainWindow(QMainWindow):
 
     def _about(self):
         _SHORT = (
-            "Built exclusively for Windows, ST-SoftwareTool is a "
+            "Built for Windows and macOS, ST-SoftwareTool is a "
             "professional management utility."
         )
         _FULL = (
-            "Built exclusively for Windows, ST-SoftwareTool is a professional "
+            "Built for Windows and macOS, ST-SoftwareTool is a professional "
             "management utility. Monitor active hardware via our advanced terminal "
             "or an intuitive GUI. Protect your privacy by blocking unwanted "
             "background app installations. Take complete control of your PC system "

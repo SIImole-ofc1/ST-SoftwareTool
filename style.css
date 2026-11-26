@@ -2872,16 +2872,6 @@ body {
     pointer-events: none;
 }
 
-.star-border__light {
-    position: absolute;
-    z-index: 0;
-    top: -48px;
-    left: -48px;
-    width: calc(100% + 96px);
-    height: calc(100% + 96px);
-    pointer-events: none;
-}
-
 .star-border-label {
     position: relative;
     z-index: 1;
