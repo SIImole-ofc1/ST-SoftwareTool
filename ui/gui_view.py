@@ -967,7 +967,12 @@ class GUIView(QWidget):
 
     def _on_tasks_ready(self, procs: list, hist: list):
         if hasattr(self, '_proc_model') and hasattr(self, '_task_count_lbl'):
+            first_load = self._proc_model.rowCount() == 0
             self._proc_model.set_procs(procs)
+            if first_load and procs:
+                # The proxy doesn't re-sort on its own (rows would jump around), so apply the
+                # chosen sort once the first list has arrived.
+                self._apply_task_sort(self._task_sort_combo.currentIndex())
             self._task_count_lbl.setText(f"Processes: {self._proc_proxy.rowCount()}")
         if hasattr(self, '_hist_model') and hasattr(self, '_hist_count_lbl'):
             self._hist_model.set_entries(hist)

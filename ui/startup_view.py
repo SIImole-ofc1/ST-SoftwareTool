@@ -218,7 +218,8 @@ class StartupView(QWidget):
         self._table.verticalHeader().setDefaultSectionSize(22)
         hdr = self._table.horizontalHeader()
         hdr.setStretchLastSection(True)
-        for col, w in enumerate((200, 140, 55, 220)):
+        # Type column: wide enough for "Launch Agent (all users)" on macOS
+        for col, w in enumerate((200, 175 if IS_MAC else 140, 55, 220)):
             hdr.setSectionResizeMode(col, QHeaderView.Interactive)
             self._table.setColumnWidth(col, w)
         self._table.selectionModel().selectionChanged.connect(self._on_sel)

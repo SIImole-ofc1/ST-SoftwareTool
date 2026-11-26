@@ -113,6 +113,7 @@ jobs:
             --macos-signed-app-name="com.stsoftwaretool.app" \
             --macos-app-version="$VERSION" \
             --macos-app-icon=build/ST.icns \
+            --macos-app-protected-resource="NSAppleEventsUsageDescription:ST-SoftwareTool reads and changes your Login Items (Advanced Startup) through System Events." \
             --include-data-dir=assets=assets \
             --include-data-files=build/tools/yt-dlp_macos=tools/yt-dlp_macos \
             --output-dir=build/nuitka \
@@ -169,8 +170,33 @@ jobs:
       - name: Smoke test (packaged app)
         run: |
           bin=$(find build/ST-SoftwareTool.app/Contents/MacOS -maxdepth 1 -type f -perm -u+x -name 'ST-SoftwareTool*' | head -n 1)
+          echo "bin=$bin" >> "$GITHUB_ENV"
           echo "Launching $bin"
-          ST_SMOKE_TEST=20 "$bin"
+          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots "$bin"
+
+      - name: Task Manager collector (packaged app)
+        # The Task Manager runs the app binary with --proc-monitor to list processes
+        run: |
+          python - "$bin" <<'PY'
+          import json, subprocess, sys
+          p = subprocess.Popen([sys.argv[1], '--proc-monitor'], stdout=subprocess.PIPE)
+          try:
+              procs = json.loads(p.stdout.readline())
+          finally:
+              p.terminate()
+          with_ram = sum(1 for x in procs if x['ram_mb'] > 0)
+          print(f'{len(procs)} processes, {with_ram} with memory figures')
+          assert len(procs) > 100 and with_ram >= 0.95 * len(procs)
+          PY
+          /usr/libexec/PlistBuddy -c "Print :NSAppleEventsUsageDescription" build/ST-SoftwareTool.app/Contents/Info.plist
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-tab-screenshots-${{ matrix.arch }}
+          path: build/app-shots/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Build .dmg (custom install window)
         # Window design: packaging/macos/make_dmg_background.py (background) and
