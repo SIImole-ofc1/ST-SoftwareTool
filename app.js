@@ -33,11 +33,23 @@ fetch('https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases/latest
 /* ── Active nav on scroll ────────────────── */
 const sections = document.querySelectorAll('section[id]');
 const navLinks = document.querySelectorAll('.nav-menu a[href^="#"]');
+// Section positions are cached (re-measured when the page size changes) and the menu is only
+// touched when the active section actually changes, at most once per frame.
+let sectionTops = [];
+let activeNavId = null;
+let navFrame = 0;
+function measureSections() {
+    sectionTops = Array.from(sections, s => ({ id: s.id, top: s.offsetTop }));
+}
 function updateActiveNav() {
-    let cur = sections[0]?.id || '';
-    sections.forEach(s => {
-        if (window.scrollY >= s.offsetTop - 60) cur = s.id;
-    });
+    navFrame = 0;
+    if (!sectionTops.length) measureSections();
+    let cur = sectionTops[0]?.id || '';
+    for (const s of sectionTops) {
+        if (window.scrollY >= s.top - 60) cur = s.id;
+    }
+    if (cur === activeNavId) return;
+    activeNavId = cur;
     navLinks.forEach(a => {
         const active = a.getAttribute('href') === '#' + cur;
         a.classList.toggle('active', active);
@@ -45,7 +57,16 @@ function updateActiveNav() {
         else a.removeAttribute('aria-current');
     });
 }
-window.addEventListener('scroll', updateActiveNav, { passive: true });
+window.addEventListener('scroll', () => {
+    if (!navFrame) navFrame = requestAnimationFrame(updateActiveNav);
+}, { passive: true });
+if ('ResizeObserver' in window) {
+    new ResizeObserver(() => {
+        measureSections();
+        activeNavId = null;
+        updateActiveNav();
+    }).observe(document.body);
+}
 updateActiveNav();
 
 /* ── Terminal animation ──────────────────── */
@@ -88,9 +109,43 @@ const SESSIONS = [
 let sessionIdx  = 0;
 let lineIdx     = 0;
 let charIdx     = 0;
-let typingTimer = null;
 const outEl     = document.getElementById('term-out');
 const inputEl   = document.getElementById('term-typed');
+
+// Steps are scheduled with later(): while the terminal is off-screen or the tab is hidden the
+// next step waits, so the typing doesn't keep the page repainting when nobody can see it.
+let terminalVisible = true;
+let pendingStep = null;
+function later(fn, ms) {
+    setTimeout(() => {
+        if (terminalVisible && !document.hidden) fn();
+        else pendingStep = fn;
+    }, ms);
+}
+function resumeTerminal() {
+    if (!pendingStep || !terminalVisible || document.hidden) return;
+    const fn = pendingStep;
+    pendingStep = null;
+    fn();
+}
+if (outEl) {
+    new IntersectionObserver(entries => {
+        terminalVisible = entries.some(e => e.isIntersecting);
+        resumeTerminal();
+    }).observe(outEl);
+}
+document.addEventListener('visibilitychange', resumeTerminal);
+
+// Reserve the tallest session's height once, so typing never changes the page layout below.
+function reserveTerminalHeight() {
+    const probe = document.createElement('div');
+    probe.textContent = 'X';
+    outEl.appendChild(probe);
+    const lineHeight = probe.getBoundingClientRect().height;
+    probe.remove();
+    const maxLines = Math.max(...SESSIONS.map(session => session.length));
+    if (lineHeight > 0) outEl.style.height = `${Math.max(140, Math.ceil(maxLines * lineHeight))}px`;
+}
 
 function nextSession() {
     if (!outEl || !inputEl) return;
@@ -105,12 +160,12 @@ function typeLine() {
     const session = SESSIONS[sessionIdx];
     if (lineIdx >= session.length) {
         sessionIdx = (sessionIdx + 1) % SESSIONS.length;
-        setTimeout(nextSession, 2500);
+        later(nextSession, 2500);
         return;
     }
     const entry = session[lineIdx];
     if (entry.delay > 0) {
-        setTimeout(startTyping, entry.delay);
+        later(startTyping, entry.delay);
     } else {
         startTyping();
     }
@@ -129,7 +184,7 @@ function startTyping() {
         // instant output line
         appendLine(entry.text, entry.cls);
         lineIdx++;
-        setTimeout(typeLine, 80);
+        later(typeLine, 80);
     }
 }
 
@@ -139,13 +194,13 @@ function typeChar() {
     if (charIdx <= entry.text.length) {
         inputEl.textContent = entry.text.slice(0, charIdx);
         charIdx++;
-        typingTimer = setTimeout(typeChar, 45 + Math.random() * 35);
+        later(typeChar, 45 + Math.random() * 35);
     } else {
         // commit line to output
         appendLine(entry.text, entry.cls);
         inputEl.textContent = '';
         lineIdx++;
-        setTimeout(typeLine, 200);
+        later(typeLine, 200);
     }
 }
 
@@ -180,7 +235,8 @@ document.querySelectorAll('#monitor').forEach(el => observer.observe(el));
 
 // Start terminal animation after page loads
 window.addEventListener('load', () => {
-    setTimeout(nextSession, 600);
+    if (outEl) reserveTerminalHeight();
+    later(nextSession, 600);
 });
 
 /* ── Privacy / Terms consent popup ───────────── */

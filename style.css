@@ -177,6 +177,7 @@ a * {
 
 .gradient-text__content {
     display: inline-block;
+    will-change: transform; /* own layer: repainting the text doesn't touch the glow */
     background-image: var(--gt-gradient);
     -webkit-background-clip: text;
     background-clip: text;
@@ -187,7 +188,8 @@ a * {
     position: absolute;
     inset: 0;
     z-index: -1;
-    background-image: var(--gt-gradient);
+    will-change: transform; /* own cached layer: blurred once, not every frame */
+    background-image: var(--gt-glow-gradient, var(--gt-gradient));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -2401,6 +2403,21 @@ body {
     background: transparent;
 }
 
+/* ClickSpark (see click-spark.js): bursts are drawn on short-lived canvases in this layer */
+.click-spark-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483646;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.click-spark-layer canvas {
+    position: absolute;
+    display: block;
+    pointer-events: none;
+}
+
 /* Gyro cursor (see gyro-cursor.js): arrow that turns toward its movement */
 .gyro-cursor {
     position: fixed;
@@ -2667,6 +2684,12 @@ body {
     border: 1px solid rgba(126, 151, 185, 0.28);
     border-radius: 9px;
     background: rgba(5, 10, 18, 0.88);
+}
+
+/* Typing in the demo terminal stays inside it: no layout or repaint work leaks to the rest of the page. */
+#term-out,
+.term-input-row {
+    contain: content;
 }
 
 .hero-terminal-wrap .terminal {

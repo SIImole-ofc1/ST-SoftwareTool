@@ -379,17 +379,39 @@ void main() {
         gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
+    // 30fps without asking for the frames in between: a pending requestAnimationFrame makes the
+    // browser run its whole render pipeline, so wait on a timer until the next tick of a shared
+    // 30fps clock (gradient-text.js uses the same one) and only then request a frame. Both
+    // scripts therefore draw in the same frames.
     const frameMs = 1000 / settings.fps;
+    let timer = 0;
+
+    // Hold the veil still while the page scrolls: it drifts slowly, so a short freeze is invisible,
+    // and it leaves the GPU free for scrolling and for re-compositing the overlays above it.
+    let scrolling = false;
+    let scrollIdle = 0;
+    window.addEventListener('scroll', () => {
+        scrolling = true;
+        clearTimeout(scrollIdle);
+        scrollIdle = setTimeout(() => {
+            scrolling = false;
+            last = 0;
+            wake();
+        }, 200);
+    }, { passive: true });
+
+    function nextTick() {
+        timer = setTimeout(() => {
+            timer = 0;
+            raf = requestAnimationFrame(frame);
+        }, frameMs - (performance.now() % frameMs));
+    }
     function frame(now) {
         raf = 0;
         if (document.hidden) return;
-        if (last && now - last < frameMs - 2) {
-            raf = requestAnimationFrame(frame);
-            return;
-        }
         const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
         last = now;
-        const moving = !s.paused && !reduce;
+        const moving = !s.paused && !reduce && !scrolling;
         if (moving) state.clock += dt * s.speed;
         if (!s.intro || reduce) state.intro = 1;
         else if (state.intro < 1) state.intro = Math.min(1, state.intro + dt / INTRO_SECONDS);
@@ -423,12 +445,12 @@ void main() {
             Math.abs(state.dragX) + Math.abs(state.dragY) > 0.05 ||
             Math.abs(pointer.x - state.x) + Math.abs(pointer.y - state.y) > 0.3 ||
             Math.abs(lightGoalX - state.lightX) + Math.abs(lightGoalY - state.lightY) > 0.0005;
-        if (moving || settling) raf = requestAnimationFrame(frame);
+        if (moving || settling) nextTick();
         else last = 0;
     }
 
     function wake() {
-        if (!raf && !document.hidden) raf = requestAnimationFrame(frame);
+        if (!raf && !timer && !document.hidden) raf = requestAnimationFrame(frame);
     }
 
     function resize() {
@@ -470,7 +492,9 @@ void main() {
     canvas.addEventListener('webglcontextlost', event => {
         event.preventDefault();
         cancelAnimationFrame(raf);
+        clearTimeout(timer);
         raf = 0;
+        timer = 0;
     });
 
     resize();

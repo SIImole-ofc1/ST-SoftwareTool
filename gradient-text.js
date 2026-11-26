@@ -29,6 +29,9 @@
 
         root.style.setProperty('--gt-gradient', `linear-gradient(${s.angle}deg, ${[...colors, colors[0]].join(', ')})`);
         root.style.setProperty('--gt-glow', String(glow));
+        // The glow keeps this static gradient: it is blurred, so animating it is invisible but
+        // would force the browser to re-blur it on every frame.
+        root.style.setProperty('--gt-glow-gradient', `linear-gradient(${s.angle}deg, ${[...colors, colors[0]].join(', ')})`);
 
         const inner = root.querySelector('.gradient-text__inner');
         const content = root.querySelector('.gradient-text__content');
@@ -78,21 +81,39 @@
             root.style.setProperty('--gt-gradient', image);
         }
 
+        // 30fps on the same shared clock as dark-veil.js: sleep on a timer until the next tick,
+        // then request one frame, so no frames are requested in between and both scripts draw together.
+        const frameMs = 1000 / 30;
+        let timer = 0;
+        function nextTick() {
+            timer = setTimeout(() => {
+                timer = 0;
+                raf = requestAnimationFrame(tick);
+            }, frameMs - (performance.now() % frameMs));
+        }
+        // Pause while the page scrolls (same reasoning as dark-veil.js).
+        let scrolling = false;
+        let scrollIdle = 0;
+        window.addEventListener('scroll', () => {
+            scrolling = true;
+            clearTimeout(scrollIdle);
+            scrollIdle = setTimeout(() => {
+                scrolling = false;
+                wake();
+            }, 200);
+        }, { passive: true });
+
         function tick(now) {
             raf = 0;
-            // Repaint at ~30fps: the colours drift slowly and every repaint re-rasterises the blurred glow.
-            if (now - last < 31) {
-                if (visible && !document.hidden) raf = requestAnimationFrame(tick);
-                return;
-            }
+            if (scrolling) return;
             time += Math.min(0.05, Math.max(0, (now - last) / 1000));
             last = now;
             paint();
-            if (visible && !document.hidden) raf = requestAnimationFrame(tick);
+            if (visible && !document.hidden) nextTick();
         }
 
         function wake() {
-            if (raf || reduce || !visible || document.hidden) return;
+            if (raf || timer || reduce || !visible || document.hidden) return;
             last = performance.now();
             raf = requestAnimationFrame(tick);
         }
