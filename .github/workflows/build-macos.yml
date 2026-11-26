@@ -58,7 +58,8 @@ jobs:
           python -m pip install --upgrade pip
           # PySide6 6.8 LTS: Qt 6.8 still supports macOS 12+, newer Qt needs macOS 14.4+
           # (many Intel Macs can't update past macOS 13).
-          python -m pip install "PySide6==6.8.*" psutil nuitka ordered-set zstandard
+          # certifi: the app's HTTPS certificates (macOS Python can't use the keychain)
+          python -m pip install "PySide6==6.8.*" psutil certifi nuitka ordered-set zstandard
 
       - name: Read app version
         env:
@@ -115,6 +116,7 @@ jobs:
             --macos-app-icon=build/ST.icns \
             --macos-app-protected-resource="NSAppleEventsUsageDescription:ST-SoftwareTool reads and changes your Login Items (Advanced Startup) through System Events." \
             --include-data-dir=assets=assets \
+            --include-package-data=certifi \
             --include-data-files=build/tools/yt-dlp_macos=tools/yt-dlp_macos \
             --output-dir=build/nuitka \
             --output-filename=ST-SoftwareTool \
@@ -173,9 +175,12 @@ jobs:
           echo "bin=$bin" >> "$GITHUB_ENV"
           echo "Launching $bin"
           set -o pipefail
-          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots "$bin" | tee build/smoke.log
+          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots ST_SMOKE_HTTPS=1 "$bin" | tee build/smoke.log
           # The app must recognise its own bundle (Task Manager, Open at Login, updates use it)
           grep -q "bundle='.*/ST-SoftwareTool.app'" build/smoke.log
+          # HTTPS must use the certificates shipped inside the app, not a file that only exists
+          # on this build machine (users' Macs got CERTIFICATE_VERIFY_FAILED)
+          grep -q "SMOKE ssl cert file='.*/ST-SoftwareTool.app/.*cacert.pem'" build/smoke.log
 
       - name: Task Manager collector (packaged app)
         # The Task Manager runs the app binary with --proc-monitor to list processes

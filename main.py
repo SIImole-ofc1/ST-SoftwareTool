@@ -9,6 +9,26 @@ if __name__ == "__main__" and "--proc-monitor" in sys.argv[1:]:
     sys.exit(0)
 
 import os, ctypes
+
+
+def _use_bundled_certificates() -> None:
+    """macOS: Python's OpenSSL does not read the macOS keychain, and the certificate file it
+    was built to look for doesn't exist on users' Macs, so every HTTPS request (update check,
+    antivirus lookups) failed with CERTIFICATE_VERIFY_FAILED. Point OpenSSL at the certifi
+    bundle that ships inside the app. Windows reads its own certificate store and needs nothing."""
+    if sys.platform != "darwin" or os.environ.get("SSL_CERT_FILE"):
+        return
+    try:
+        import certifi
+        path = certifi.where()
+    except Exception:
+        return
+    if os.path.isfile(path):
+        os.environ["SSL_CERT_FILE"] = path   # read by OpenSSL whenever a context is created
+
+
+_use_bundled_certificates()   # before anything opens a network connection
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtCore import QTimer
@@ -60,6 +80,14 @@ def _smoke_test(app, window, seconds: float) -> None:
         print(f"SMOKE executable={sys.executable!r} own={own_executable()!r} "
               f"bundle={mac_app_bundle()!r} task_cmd={window.gui._task_backend._cmd!r}",
               flush=True)
+        if os.environ.get("ST_SMOKE_HTTPS"):
+            # The real update check, over HTTPS, as the user's app does it
+            from core import updater
+            print(f"SMOKE ssl cert file={os.environ.get('SSL_CERT_FILE')!r}", flush=True)
+            result, _asset, detail = updater._fetch_latest()
+            print(f"SMOKE update check -> {result!r} {detail!r}", flush=True)
+            if result == updater._ERROR:
+                errors.append(f"Update check failed: {detail}")
         for family in ("Consolas", "Segoe UI"):
             info = QFontInfo(QFont(family, 9))
             print(f"SMOKE font '{family}' -> '{info.family()}' fixedPitch={info.fixedPitch()}",
