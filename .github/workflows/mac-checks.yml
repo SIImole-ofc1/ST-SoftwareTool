@@ -1,0 +1,54 @@
+name: Mac feature checks
+
+# Fast checks of the macOS-specific Task Manager and Advanced Startup code on real Macs
+# (no Nuitka build). Saves screenshots of those tabs as an artifact.
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'core/**'
+      - 'ui/**'
+      - 'main.py'
+      - 'tests/mac/**'
+      - '.github/workflows/mac-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install "PySide6==6.8.*" psutil
+      - name: Diagnostics (temporary)
+        run: |
+          set +e
+          sw_vers; uname -m; id
+          echo "--- ps / top permissions"; ls -l /bin/ps /usr/bin/top
+          echo "--- ps for root processes"; ps -axo pid=,user=,rss=,time=,state=,lstart=,comm= | awk '$2=="root"' | head -8
+          echo "--- long names"; ps -axo comm= | awk -F/ '{print $NF}' | awk 'length($0)>16' | head -5
+          echo "--- psutil access"; python - <<'PY'
+          import psutil
+          denied = ok = 0
+          for p in psutil.process_iter(['memory_info', 'username', 'name']):
+              if p.info['memory_info'] is None: denied += 1
+              else: ok += 1
+          print('memory_info ok', ok, 'denied', denied)
+          PY
+          echo "--- print-disabled gui"; launchctl print-disabled gui/$(id -u) | head -5
+          echo "--- print-disabled system"; launchctl print-disabled system | head -5
+          echo "--- user can disable in own gui domain:"; launchctl disable gui/$(id -u)/com.stsoftwaretool.diagtest; echo "rc=$?"; launchctl print-disabled gui/$(id -u) | grep diagtest; launchctl enable gui/$(id -u)/com.stsoftwaretool.diagtest
+          echo "--- user disabling in system domain (expect failure):"; launchctl disable system/com.stsoftwaretool.diagtest; echo "rc=$?"
+          echo "--- agent folders"; ls ~/Library/LaunchAgents /Library/LaunchAgents /Library/LaunchDaemons 2>&1 | head -30
+          echo "--- login items"; osascript -e 'tell application "System Events" to get the name of every login item'; echo "rc=$?"
+          echo "--- crontab"; crontab -l; echo "rc=$?"
+          echo "--- system extensions"; systemextensionsctl list 2>&1 | head -5
+          echo "--- kexts"; ls /Library/Extensions | head -5
+          echo "--- passwordless sudo"; sudo -n true && echo yes
