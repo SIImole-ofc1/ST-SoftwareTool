@@ -222,10 +222,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: App icon (dark custom icon, relaunch, back to light)
+        # Settings › App Icon sets the dark logo as the app's custom icon. Check it is set, that
+        # the app still starts with it, and that Light removes it again — on a copy, so the
+        # .dmg gets the untouched app.
+        run: |
+          rm -rf /tmp/ST-icon-test.app
+          cp -R build/ST-SoftwareTool.app /tmp/ST-icon-test.app
+          bin=/tmp/ST-icon-test.app/Contents/MacOS/ST-SoftwareTool
+          mkdir -p build/icon-shots
+          set -o pipefail
+          ST_SMOKE_TEST=6 ST_SMOKE_ICON=dark ST_SMOKE_ICON_SHOT=build/icon-shots/dock-dark.png "$bin" | tee build/icon1.log
+          grep -q "SMOKE app icon choice='dark' style='dark' bundle_custom_icon=True" build/icon1.log
+          ls -la@ /tmp/ST-icon-test.app
+          ST_SMOKE_TEST=6 "$bin" | tee build/icon2.log          # starts fine with the custom icon
+          ST_SMOKE_TEST=6 ST_SMOKE_ICON=light ST_SMOKE_ICON_SHOT=build/icon-shots/dock-light.png "$bin" | tee build/icon3.log
+          grep -q "SMOKE app icon choice='light' style='light' bundle_custom_icon=False" build/icon3.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-icon-screenshots-${{ matrix.arch }}
+          path: build/icon-shots/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Build .dmg (custom install window)
         # Window design: packaging/macos/make_dmg_background.py (background) and
         # packaging/macos/dmg_settings.py (size, icon positions).
         run: |
+          # the tests above must not have changed the app that goes into the .dmg
+          codesign --verify --deep --strict build/ST-SoftwareTool.app
           python -m pip install "dmgbuild>=1.6"
           tiffutil -cathidpicheck packaging/macos/dmg-background.png \
             packaging/macos/dmg-background@2x.png -out build/dmg-background.tiff

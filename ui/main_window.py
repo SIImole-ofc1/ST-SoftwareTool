@@ -78,6 +78,10 @@ class MainWindow(QMainWindow):
             # Reopening the app (Dock, Launchpad, Finder) shows the window again
             QApplication.instance().applicationStateChanged.connect(self._on_app_state)
             self._reopen_block_until = time.monotonic() + 3.0   # ignore the launch itself
+            # Rounded light / dark app icon (Settings › App Icon); Automatic follows the Mac
+            self._apply_app_icon()
+            QApplication.styleHints().colorSchemeChanged.connect(
+                lambda *_: self._apply_app_icon(only_auto=True))
 
     # ── system tray ───────────────────────────────────────────────────────────
 
@@ -199,10 +203,25 @@ class MainWindow(QMainWindow):
             mac_appkit.set_activation_policy(mac_appkit.ACCESSORY)
 
     def _on_app_state(self, state):
+        if state == Qt.ApplicationActive:
+            # the Mac's icon style may have changed while ST was in the background
+            self._apply_app_icon(only_auto=True)
         # Opening the app again (Dock, Launchpad, Finder) while only the menu bar part runs
         # makes macOS re-activate this instance: show the window again.
         if state == Qt.ApplicationActive and self.isHidden():
             QTimer.singleShot(250, self._maybe_reopen)
+
+    def _apply_app_icon(self, only_auto: bool = False):
+        """macOS: show the light or dark rounded icon chosen in Settings › App Icon."""
+        if not IS_MAC:
+            return
+        if only_auto and self.manager.settings.get('app_icon', 'auto') != 'auto':
+            return
+        from ui import app_icon
+        before = self.manager.settings.get('app_icon_bundle')
+        self._icon_style = app_icon.apply(self.manager.settings)
+        if self.manager.settings.get('app_icon_bundle') != before:
+            self._save_settings_quietly()
 
     def _maybe_reopen(self):
         if not self.isHidden() or time.monotonic() < self._reopen_block_until:
@@ -317,6 +336,7 @@ class MainWindow(QMainWindow):
 
     def _on_settings_changed(self):
         s = self.manager.settings
+        self._apply_app_icon()
         self._privacy.set_enabled(s.get('monitor_privacy', True))
         self._scanner.set_auto_block(s.get('auto_block_threats', True))
         if s.get('hourly_scan', True):

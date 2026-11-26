@@ -242,6 +242,32 @@ def _smoke_test(app, window, seconds: float) -> None:
                 errors.append("Opening the app again did not show the window")
         QTimer.singleShot(3000, after_reopen)
 
+    # ST_SMOKE_ICON=light|dark|auto (macOS): choose the app icon like Settings › App Icon does,
+    # then check the Dock / bundle icon. ST_SMOKE_ICON_SHOT=<png> also screenshots the screen.
+    icon_choice = os.environ.get("ST_SMOKE_ICON")
+    if icon_choice and sys.platform == "darwin":
+        def set_icon():
+            window.manager.settings['app_icon'] = icon_choice
+            window._apply_app_icon()
+
+        def check_icon():
+            import subprocess
+            from core.osinfo import mac_app_bundle
+            bundle = mac_app_bundle()
+            custom = bool(bundle) and os.path.exists(os.path.join(bundle, 'Icon\r'))
+            style = getattr(window, '_icon_style', None)
+            print(f"SMOKE app icon choice={icon_choice!r} style={style!r} "
+                  f"bundle_custom_icon={custom}", flush=True)
+            if icon_choice in ('light', 'dark') and style != icon_choice:
+                errors.append(f"App icon is {style}, expected {icon_choice}")
+            if bundle and custom != (style == 'dark'):
+                errors.append("The app's Finder / Launchpad icon was not updated")
+            shot = os.environ.get("ST_SMOKE_ICON_SHOT")
+            if shot:
+                subprocess.run(['screencapture', '-x', shot], timeout=20)
+        QTimer.singleShot(800, set_icon)
+        QTimer.singleShot(3000, check_icon)
+
     if os.environ.get("ST_SMOKE_WIDGET") and sys.platform == "darwin":
         QTimer.singleShot(1000, lambda: window._set_perf_widget(True))
         QTimer.singleShot(4000, check_widget)
@@ -276,7 +302,9 @@ def main():
             QFont.insertSubstitutions(win_font, [mono, "Courier", "Monospace"])
         QFont.insertSubstitutions("Segoe UI", [ui, "Arial"])
 
-    if os.path.exists(_icon_path):
+    # macOS: the Dock icon is the rounded light / dark icon set by MainWindow (ui/app_icon.py);
+    # this square logo would replace it with a plain square in the Dock.
+    if os.path.exists(_icon_path) and sys.platform != "darwin":
         app.setWindowIcon(QIcon(_icon_path))
 
     manager   = AppManager()

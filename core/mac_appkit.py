@@ -77,6 +77,36 @@ def activate_app() -> None:
         pass
 
 
+def _nsstring(text: str):
+    return _send(ctypes.c_void_p, ctypes.c_char_p)(_runtime().objc_getClass(b'NSString'),
+                                                   _sel(b'stringWithUTF8String:'),
+                                                   text.encode('utf-8'))
+
+
+def set_file_icon(path: str, image_path: Optional[str]) -> bool:
+    """Set the icon Finder, Launchpad and the Dock show for a file or app bundle (what
+    "Get Info › paste icon" does). image_path=None removes the custom icon again."""
+    if not IS_MAC:
+        return False
+    try:
+        workspace = _send(ctypes.c_void_p)(_runtime().objc_getClass(b'NSWorkspace'),
+                                           _sel(b'sharedWorkspace'))
+        image = None
+        if image_path:
+            image = _send(ctypes.c_void_p)(_runtime().objc_getClass(b'NSImage'), _sel(b'alloc'))
+            image = _send(ctypes.c_void_p, ctypes.c_void_p)(image, _sel(b'initWithContentsOfFile:'),
+                                                            _nsstring(image_path))
+            if not image:
+                return False
+        ok = _send(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong)(
+            workspace, _sel(b'setIcon:forFile:options:'), image, _nsstring(path), 0)
+        if image:
+            _send(None)(image, _sel(b'release'))
+        return bool(ok)
+    except Exception:
+        return False
+
+
 def desktop_icon_level() -> int:
     """The window level of Finder's desktop icons."""
     try:

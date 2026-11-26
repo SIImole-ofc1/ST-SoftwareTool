@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QTableView, QAbstractItemView, QHeaderView,
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QThread
-from PySide6.QtGui import QFont, QColor, QBrush
+from PySide6.QtGui import QFont, QColor, QBrush, QIcon
 from core.device_manager import DeviceManager
 from core.performance_monitor import PerformanceMonitor
 from core.task_manager import TaskManagerBackend
@@ -1125,6 +1125,35 @@ class GUIView(QWidget):
         }.get(current, self.rb_dark).setChecked(True)
         layout.addWidget(theme_box)
 
+        # ── App Icon (macOS) ──────────────────────────────────────────────────
+        if IS_MAC:
+            from ui.app_icon import ICONS
+            icon_box = QGroupBox("App Icon")
+            il = QVBoxLayout(icon_box)
+            self.rb_icon_auto  = QRadioButton(
+                "Automatic  —  dark when your Mac uses dark icons or Dark Mode")
+            self.rb_icon_light = QRadioButton("Light")
+            self.rb_icon_dark  = QRadioButton("Dark")
+            bg_icon = QButtonGroup(self)
+            for rb, key in ((self.rb_icon_auto, None), (self.rb_icon_light, 'light'),
+                            (self.rb_icon_dark, 'dark')):
+                bg_icon.addButton(rb)
+                row = QHBoxLayout()
+                row.setSpacing(8)
+                row.addWidget(rb)
+                if key:
+                    preview = QLabel()
+                    preview.setPixmap(QIcon(ICONS[key]).pixmap(28, 28))
+                    row.addWidget(preview)
+                row.addStretch()
+                il.addLayout(row)
+            {"light": self.rb_icon_light, "dark": self.rb_icon_dark}.get(
+                self.manager.settings.get("app_icon", "auto"), self.rb_icon_auto).setChecked(True)
+            hint = QLabel("Shown in the Dock, Finder and Launchpad.")
+            hint.setStyleSheet("font-size: 10px; color: #888888;")
+            il.addWidget(hint)
+            layout.addWidget(icon_box)
+
         # ── Default View ──────────────────────────────────────────────────────
         view_box = QGroupBox("Default View on Startup")
         vl = QVBoxLayout(view_box)
@@ -1438,6 +1467,10 @@ class GUIView(QWidget):
         sugg = self.chk_suggestions.isChecked()
         self.manager.settings["default_view"]        = v
         self.manager.settings["terminal_suggestions"] = sugg
+        if IS_MAC:
+            self.manager.settings["app_icon"] = (
+                "light" if self.rb_icon_light.isChecked() else
+                "dark" if self.rb_icon_dark.isChecked() else "auto")
 
         # Protection & Privacy settings
         self.manager.settings['run_in_background']  = self.chk_run_background.isChecked()
