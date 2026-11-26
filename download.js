@@ -1,5 +1,5 @@
 /* Download section: Windows / macOS switch (RubberSegment), typed thank-you (TextType),
- * and a check that the macOS files are actually published in the latest release. */
+ * a "Downloading ST" toast (SwipeToast), and a check that the macOS files are actually published in the latest release. */
 (function () {
     'use strict';
 
@@ -56,6 +56,22 @@
         section.addEventListener('click', event => {
             const link = event.target.closest('a[data-download]');
             if (!link || link.getAttribute('aria-disabled') === 'true') return;
+            window.SwipeToast?.show({
+                title: 'Downloading ST',
+                description: 'Thanks for Downloading',
+                actionLabel: 'Ok',
+                background: '#27272a',
+                color: '#f5f5f5',
+                fuseColor: '#76a9ff',
+                width: 356,
+                radius: 12,
+                slideMs: 400,
+                settleBounce: 0.2,
+                swipeDistance: 40,
+                duration: 2000,
+                fuse: 'bottom',
+                pauseOnHover: true
+            });
             const box = link.closest('.download-box');
             const thanks = box && box.querySelector('.download-thanks');
             if (!thanks || !window.TextType) return;
