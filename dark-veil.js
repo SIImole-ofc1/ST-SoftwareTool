@@ -19,7 +19,7 @@
         glow: 0.4,
         grain: 0.03,
         quality: 0.5,          // 0.25 – 1
-        mouseInteraction: true,
+        mouseInteraction: false,
         mouseStrength: 1,
         intro: true,
         fade: 0,               // 0 – 1
@@ -444,16 +444,18 @@ void main() {
     }
 
     // The canvas is fixed to the viewport, so viewport coordinates are canvas coordinates.
-    window.addEventListener('pointermove', event => {
-        pointer.x = event.clientX;
-        pointer.y = event.clientY;
-        pointer.inside = true;
-        wake();
-    }, { passive: true });
-    document.documentElement.addEventListener('pointerleave', () => {
-        pointer.inside = false;
-        wake();
-    });
+    if (s.mouseInteraction) {
+        window.addEventListener('pointermove', event => {
+            pointer.x = event.clientX;
+            pointer.y = event.clientY;
+            pointer.inside = true;
+            wake();
+        }, { passive: true });
+        document.documentElement.addEventListener('pointerleave', () => {
+            pointer.inside = false;
+            wake();
+        });
+    }
     document.addEventListener('visibilitychange', () => {
         last = 0;
         wake();

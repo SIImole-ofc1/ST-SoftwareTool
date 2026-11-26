@@ -83,18 +83,54 @@ a * {
 }
 
 .site-banner-title {
-    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
-    height: clamp(74px, 10vw, 132px);
+    min-height: clamp(74px, 10vw, 132px);
+    font-size: clamp(28px, 7vw, 83px);
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: clamp(1px, 0.4vw, 6px);
+    white-space: nowrap;
     cursor: default;
-    touch-action: pan-y;
-    user-select: none;
 }
 
-.site-banner-title canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
+/* GradientText (React Bits port, see gradient-text.js) */
+.gradient-text {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    isolation: isolate;
+}
+
+.gradient-text__inner {
+    position: relative;
+    display: inline-block;
+}
+
+.gradient-text__content {
+    display: inline-block;
+    background-image: var(--gt-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.gradient-text__glow {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--gt-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: blur(0.3em) saturate(1.4);
+    opacity: var(--gt-glow);
+    pointer-events: none;
+    user-select: none;
 }
 
 .site-banner p {
@@ -108,7 +144,7 @@ a * {
 
 @media (max-width: 640px) {
     .site-banner-title {
-        height: clamp(64px, 16vw, 92px);
+        min-height: clamp(64px, 16vw, 92px);
     }
 }
 
