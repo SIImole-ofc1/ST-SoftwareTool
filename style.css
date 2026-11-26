@@ -2865,6 +2865,7 @@ body {
     position: absolute;
     inset: -42px;
     width: calc(100% + 84px);
+    max-width: none; /* the global "svg { max-width: 100% }" squashed it to the button's size */
     height: calc(100% + 84px);
     overflow: visible;
     pointer-events: none;
@@ -2890,6 +2891,11 @@ body {
     transform: rotate(-90deg);
     transform-origin: 50% 50%;
     transition: stroke-dasharray 100ms linear;
+}
+
+/* An empty ring is a zero-length dash, which round caps still paint as a dot */
+.back-to-top__power[stroke-dasharray="0 1"] {
+    visibility: hidden;
 }
 
 .back-to-top__face {
