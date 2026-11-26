@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
+from core.updater import APP_VERSION
 
 # Dark  —  Black & Green
 _D = {
@@ -81,12 +82,15 @@ _PALETTES = {
 
 _FONT = QFont("Consolas", 10)
 
-_BANNER = """\
+# Padded to the box's inner width so the right border stays lined up for any version number
+_BANNER_TITLE = f"ST-SoftwareTool  v{APP_VERSION}".ljust(29)
+
+_BANNER = f"""\
   ╔══════════════════════════════════════════════════╗
   ║                                                  ║
   ║   ██████╗ ████████╗                              ║
   ║  ██╔════╝    ██╔══╝                              ║
-  ║   ╚█████╗    ██║    ST-SoftwareTool  v1.0        ║
+  ║   ╚█████╗    ██║    {_BANNER_TITLE}║
   ║    ╚═══██╗   ██║    For Windows and macOS        ║
   ║  ██████╔╝    ██║                                 ║
   ║  ╚═════╝     ╚═╝                                 ║
