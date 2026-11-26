@@ -98,6 +98,7 @@ def _smoke_test(app, window, seconds: float) -> None:
     if shots_dir:
         os.makedirs(shots_dir, exist_ok=True)
         window.resize(1280, 800)
+        window._go_gui()          # the tabs live on the GUI page, not the terminal
         QTimer.singleShot(int(seconds * 1000), shoot)
     else:
         QTimer.singleShot(int(seconds * 1000), finish)

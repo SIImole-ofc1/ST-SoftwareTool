@@ -181,7 +181,8 @@ def test_startup():
     else:
         try:
             li = find(m.scan_all(), 'Calculator', 'Login Item')
-            check('found, enabled, hidden', bool(li and li.enabled and 'hidden' in li.note), m.warnings)
+            # (macOS 13+ dropped "hide on launch" for login items, so "hidden" isn't checked)
+            check('found and enabled', bool(li and li.enabled), m.warnings)
             ok, err = m.disable_entry(li)
             check('disable (removed from Login Items)', ok, err)
             li = find(m.scan_all(), 'Calculator', 'Login Item')
