@@ -2996,16 +2996,20 @@ body {
         padding: 28px 8px 18px;
     }
 
+    /* Centered on phones; wraps onto a second centered row instead of scrolling sideways. */
     .nav-menu {
-        width: calc(100% - 16px);
-        max-width: none;
+        width: max-content;
+        max-width: calc(100% - 16px);
         margin-bottom: 12px;
-        justify-content: flex-start;
+        justify-content: center;
+        flex-wrap: wrap;
+        overflow-x: visible;
+        border-radius: 24px;
     }
 
     .nav-menu .pill-nav-link {
-        min-height: 40px;
-        padding: 0 13px;
+        min-height: 38px;
+        padding: 0 12px;
         font-size: 12px;
     }
 
