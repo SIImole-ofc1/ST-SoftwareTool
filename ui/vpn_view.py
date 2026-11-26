@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QPixmap, QFont
 
+from core.osinfo import IS_MAC
 from core.vpn_manager import TorVpnManager
+from ui.async_call import call_async
 
 _ASSETS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets'
@@ -145,7 +147,7 @@ class VpnView(QWidget):
             '(~10 MB, one-time download)'
         )
         self._dl_btn.clicked.connect(self._start_download)
-        if self._mgr.is_tor_available():
+        if self._mgr.is_tor_available() or IS_MAC:   # the Mac app ships with Tor
             self._dl_btn.setVisible(False)
         btn_row.addWidget(self._dl_btn)
 
@@ -179,6 +181,9 @@ class VpnView(QWidget):
         ks_row.addStretch()
         self._ks_chk = QCheckBox('Kill Switch')
         self._ks_chk.setToolTip(
+            'When the VPN drops unexpectedly, apps that use the system proxy (browsers…)\n'
+            'stay blocked — your real IP cannot leak — until you reconnect or turn this off.'
+            if IS_MAC else
             'When the VPN drops unexpectedly, ALL internet traffic is immediately\n'
             'blocked — your real IP cannot leak even if Tor crashes.\n\n'
             'Note: requires administrator privileges to add Windows Firewall rules.'
@@ -202,13 +207,21 @@ class VpnView(QWidget):
         ks_row.addStretch()
         root.addLayout(ks_row)
 
-        ks_warn = QLabel('⚠  Kill Switch requires the app to be run as Administrator.')
+        ks_warn = QLabel(
+            'Connecting and disconnecting ask for your Mac password '
+            '(they change the network proxy settings).'
+            if IS_MAC else
+            '⚠  Kill Switch requires the app to be run as Administrator.')
         ks_warn.setAlignment(Qt.AlignCenter)
-        ks_warn.setStyleSheet('color: #ff4444; font-size: 9px;')
+        ks_warn.setStyleSheet('color: #888888; font-size: 9px;' if IS_MAC
+                              else 'color: #ff4444; font-size: 9px;')
         root.addWidget(ks_warn)
 
         # ── Tor not found hint ────────────────────────────────────────────────
         self._hint_lbl = QLabel(
+            'Tor was not found. It comes built into ST-SoftwareTool — download the app again '
+            'from the website, or install Tor Browser.'
+            if IS_MAC else
             'Tor is not installed.  Click "Download Tor" — ST-VPN will handle the rest.'
         )
         self._hint_lbl.setAlignment(Qt.AlignCenter)
@@ -336,8 +349,9 @@ class VpnView(QWidget):
             self._do_connect()
 
     def _do_connect(self):
-        # Remove any active kill switch block so Tor can connect
-        if self._mgr.is_ks_active():
+        # Remove any active kill switch block so Tor can connect (macOS: connecting points
+        # the proxy at the new Tor anyway, no extra password prompt)
+        if self._mgr.is_ks_active() and not IS_MAC:
             self._mgr.ks_deactivate()
             self._ks_status_lbl.setVisible(False)
 
@@ -400,13 +414,24 @@ class VpnView(QWidget):
         QTimer.singleShot(3000, self._update_circuit)
 
     def _do_disconnect(self):
-        self._was_connected = False
         self._connect_btn.setEnabled(False)
         self._connect_btn.setText('Disconnecting…')
         self._id_btn.setEnabled(False)
+        self._disconnecting = True
+        call_async(self, self._mgr.disconnect, self._on_disconnect_done)
 
-        self._mgr.disconnect()
-
+    def _on_disconnect_done(self, res):
+        self._disconnecting = False
+        ok, err = res
+        if not ok:
+            # macOS: password dialog cancelled or failed — the VPN stays connected
+            self._connect_btn.setText('Disconnect')
+            self._connect_btn.setEnabled(True)
+            self._id_btn.setEnabled(True)
+            if err != 'cancelled':
+                QMessageBox.warning(self, 'ST-VPN', f'Could not restore the network settings:\n{err}')
+            return
+        self._was_connected = False
         self._status_lbl.setText('● DISCONNECTED')
         self._status_lbl.setStyleSheet('color: #ff4444;')
         self._connect_btn.setText('Connect')
@@ -577,6 +602,10 @@ class VpnView(QWidget):
         enabled = (state == Qt.Checked)
         self._mgr.set_kill_switch(enabled)
         if not enabled and self._mgr.is_ks_active():
+            if IS_MAC:   # restoring the network settings asks for the password
+                call_async(self, self._mgr.ks_deactivate,
+                           lambda _r: self._ks_status_lbl.setVisible(self._mgr.is_ks_active()))
+                return
             self._mgr.ks_deactivate()
             self._ks_status_lbl.setVisible(False)
             if not self._mgr.is_connected():
@@ -609,6 +638,12 @@ class VpnView(QWidget):
             self._status_lbl.setStyleSheet('color: #ff4444; font-weight: bold;')
             self._ks_status_lbl.setVisible(True)
             msg = (
+                'ST-VPN dropped unexpectedly.\n\n'
+                'Kill Switch is ACTIVE — browsers and other apps that use the proxy are '
+                'blocked, so your real IP cannot leak.\n\n'
+                'Click  Reconnect  to restore VPN protection, or uncheck '
+                'Kill Switch to get normal internet back (asks for your password).'
+                if IS_MAC else
                 'ST-VPN dropped unexpectedly.\n\n'
                 'Kill Switch is ACTIVE — all internet traffic is blocked '
                 'to protect your real IP from leaking.\n\n'
@@ -671,6 +706,23 @@ class VpnView(QWidget):
                 'QPushButton:hover{background:#236b23;}'
                 'QPushButton:disabled{background:#1a1a1a;color:#555;border-color:#333;}'
             )
+
+    # ── used by the macOS menu-bar popup ──────────────────────────────────────
+
+    def is_connected(self) -> bool:
+        return self._mgr.is_connected()
+
+    def is_busy(self) -> bool:
+        connecting = self._worker is not None and self._worker.isRunning()
+        return connecting or getattr(self, '_disconnecting', False)
+
+    def toggle_from_menu_bar(self) -> None:
+        if self.is_busy():
+            return
+        if not self._mgr.is_tor_available():
+            QMessageBox.warning(self, 'ST-VPN', self._hint_lbl.text())
+            return
+        self._toggle_vpn()
 
     def request_auto_connect(self) -> None:
         """Called by main window when auto_vpn_startup setting is on."""

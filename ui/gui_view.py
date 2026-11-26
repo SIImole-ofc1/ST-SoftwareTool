@@ -27,14 +27,14 @@ from ui.task_table import ProcessTableModel, HistoryTableModel, TaskSortProxy
 from ui.antivirus_view import AntivirusView
 from core.osinfo import IS_MAC, IS_WINDOWS
 
-# Windows-only screens (Windows services, registry tweaks, Tor VPN)
+# Windows-only screens (Windows services, registry tweaks)
 if IS_WINDOWS:
     from ui.services_view import ServicesView
     from ui.device_settings_view import DeviceSettingsView
-    from ui.vpn_view import VpnView
-# Advanced Startup has a Windows and a macOS backend
+# Advanced Startup and the Tor VPN have a Windows and a macOS backend
 if IS_WINDOWS or IS_MAC:
     from ui.startup_view import StartupView
+    from ui.vpn_view import VpnView
 
 # (column_index, Qt.SortOrder) pairs used by the sort combo
 _TASK_SORT_PROXY = [
@@ -302,12 +302,18 @@ class GUIView(QWidget):
         self._gpu_worker.gpu_ready.connect(self._on_gpu_ready)
         self._gpu_worker.details_ready.connect(self._on_gpu_details)
 
+        # Latest samples, so the desktop widget and menu-bar popup show numbers right away
+        self.last_perf: Optional[dict] = None
+        self.last_gpu = -1.0
+        self._perf_worker.perf_ready.connect(lambda d: setattr(self, 'last_perf', d))
+        self._gpu_worker.gpu_ready.connect(lambda v: setattr(self, 'last_gpu', v))
+
         # Lazy-loaded tab widgets (created once, reused)
         self._svc_view        = ServicesView(self)       if IS_WINDOWS else None
         self._startup_view    = StartupView(self)        if (IS_WINDOWS or IS_MAC) else None
         self._dev_settings    = DeviceSettingsView(self) if IS_WINDOWS else None
         self._antivirus_view  = AntivirusView(self)
-        self._vpn_view        = VpnView(self)            if IS_WINDOWS else None
+        self._vpn_view        = VpnView(self)            if (IS_WINDOWS or IS_MAC) else None
 
         self._build_ui()
         self.refresh()

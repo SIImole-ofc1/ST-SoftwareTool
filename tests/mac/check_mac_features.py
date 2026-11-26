@@ -235,8 +235,78 @@ def test_gpu():
     check('GPU reading is a percentage or unavailable', value is None or 0 <= value <= 100, value)
 
 
+def _via_system_proxy(url):
+    """GET through whatever proxy macOS is set to (urllib reads it like Safari does)."""
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(urllib.request.getproxies()))
+    with opener.open(url, timeout=30) as r:
+        return r.read().decode()
+
+
+def test_vpn():
+    from core import vpn_manager as vm
+    section('VPN: Tor on macOS')
+    m = vm.TorVpnManager()
+    tor = m.find_tor()
+    check('bundled Tor found', bool(tor and tor.startswith(ROOT)), tor)
+    services = vm.mac_network_services()
+    check('network services listed', bool(services), services)
+    real_v4, _ = m.fetch_ips()
+    print('real IPv4:', real_v4)
+
+    m.set_stealth('none', [])
+    t0 = time.monotonic()
+    ok, err = m.connect(progress_cb=lambda pct, msg: print(f'  {msg}', flush=True)
+                        if pct in (1, 25, 50, 75, 100) else None)
+    check(f'connects through Tor ({time.monotonic() - t0:.0f} s)', ok, err)
+    if not ok:
+        return
+    try:
+        state = vm.mac_proxy_state(services[0])
+        check('system SOCKS proxy points at Tor',
+              state['socks'] == (True, '127.0.0.1', str(vm.SOCKS_PORT)), state)
+        check('system HTTPS proxy points at the Tor tunnel',
+              state['https'] == (True, '127.0.0.1', str(vm.HTTP_TUNNEL)), state)
+        tor_v4, _ = m.fetch_ips()
+        check('exit IP differs from the real IP', bool(tor_v4) and tor_v4 != real_v4, (real_v4, tor_v4))
+        info = json.loads(_via_system_proxy('https://check.torproject.org/api/ip'))
+        check('check.torproject.org: traffic comes through Tor (via the system proxy)',
+              info.get('IsTor') is True, info)
+        ok, err = m.new_identity()
+        check('New Identity accepted', ok, err)
+    finally:
+        ok, err = m.disconnect()
+    state = vm.mac_proxy_state(services[0])
+    check('disconnect restores the network settings',
+          ok and not state['socks'][0] and not state['https'][0], (err, state))
+
+    section('VPN: kill switch')
+    m.set_kill_switch(True)
+    ok, err = m.connect()
+    check('reconnects', ok, err)
+    if not ok:
+        return
+    m._proc.kill()                       # Tor crashes
+    deadline = time.monotonic() + 15
+    while m.is_connected() and time.monotonic() < deadline:
+        time.sleep(0.5)
+    state = vm.mac_proxy_state(services[0])
+    check('drop detected, kill switch active', not m.is_connected() and m.is_ks_active())
+    check('traffic stays blocked (proxy still points at the stopped Tor)', state['socks'][0], state)
+    try:
+        _via_system_proxy('https://check.torproject.org/api/ip')
+        leaked = True
+    except Exception:
+        leaked = False
+    check('no direct connection possible through the proxy', not leaked)
+    m.set_kill_switch(False)             # what unticking Kill Switch does
+    state = vm.mac_proxy_state(services[0])
+    check('turning the kill switch off restores the network', not m.is_ks_active()
+          and not state['socks'][0], state)
+
+
 if __name__ == '__main__':
-    for test in (test_task_manager, test_startup, test_gpu):
+    for test in (test_task_manager, test_startup, test_gpu, test_vpn):
         try:
             test()
         except Exception as exc:  # report and carry on with the next group

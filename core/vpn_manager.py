@@ -22,11 +22,18 @@ import struct
 import time
 import urllib.request
 import urllib.parse
-import winreg
+import shlex
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
+try:
+    import winreg                 # Windows: system proxy lives in the registry
+except ImportError:               # macOS / Linux
+    winreg = None                 # type: ignore[assignment]
+
 import sys as _sys
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW, mac_app_bundle, own_executable
+
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _vpn_is_compiled() -> bool:
@@ -37,14 +44,20 @@ def _vpn_is_compiled() -> bool:
         os.path.join(os.path.dirname(_sys.executable), 'proc_monitor.exe')
     )
 
-if _vpn_is_compiled():
+if IS_WINDOWS and _vpn_is_compiled():
     _APP_DIR  = os.path.dirname(_sys.executable)
     _TOR_DIR  = os.path.join(_APP_DIR, 'core', 'tor_bundle')
     _DATA_DIR = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')),
                              'ST-SoftwareTool', 'tor_data')
+elif IS_MAC and mac_app_bundle():
+    # The macOS build ships the official Tor Expert Bundle inside the app (build-macos.yml)
+    _TOR_DIR  = os.path.join(os.path.dirname(own_executable()), 'core', 'tor_bundle')
+    _DATA_DIR = os.path.expanduser('~/Library/Application Support/ST-SoftwareTool/tor_data')
 else:
     _TOR_DIR  = os.path.join(_MODULE_DIR, 'tor_bundle')
     _DATA_DIR = os.path.join(_MODULE_DIR, 'tor_data')
+
+_EXE = '.exe' if IS_WINDOWS else ''
 
 SOCKS_PORT   = 9050
 CONTROL_PORT = 9051
@@ -114,12 +127,25 @@ _BUNDLE_URL = (
 _BUNDLE_FALLBACK = 'https://www.torproject.org/download/tor/'
 
 # Common places Tor can be found
-_TOR_CANDIDATES = [
-    os.path.join(_TOR_DIR, 'tor', 'tor.exe'),   # our extracted bundle
-    os.path.join(_TOR_DIR, 'tor.exe'),
-    r'C:\Program Files\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
-    r'C:\Program Files (x86)\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
-]
+if IS_MAC:
+    _TOR_CANDIDATES = [
+        os.path.join(_TOR_DIR, 'tor', 'tor'),             # bundled with the app
+        '/Applications/Tor Browser.app/Contents/MacOS/Tor/tor',
+        '/opt/homebrew/bin/tor',                          # Homebrew (Apple Silicon)
+        '/usr/local/bin/tor',                             # Homebrew (Intel)
+    ]
+else:
+    _TOR_CANDIDATES = [
+        os.path.join(_TOR_DIR, 'tor', 'tor.exe'),   # our extracted bundle
+        os.path.join(_TOR_DIR, 'tor.exe'),
+        r'C:\Program Files\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
+        r'C:\Program Files (x86)\Tor Browser\Browser\TorBrowser\Tor\tor.exe',
+    ]
+
+# macOS proxy switches go through networksetup, which needs an administrator password
+_NETWORKSETUP = '/usr/sbin/networksetup'
+_PROXY_BYPASS = ['localhost', '127.0.0.1', '*.local', '169.254/16',
+                 '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
 
 
 # ── data classes ─────────────────────────────────────────────────────────────
@@ -170,7 +196,7 @@ class TorVpnManager:
                          'Browser', 'TorBrowser', 'Tor', 'tor.exe'),
             os.path.join(home, 'Downloads', 'Tor Browser',
                          'Browser', 'TorBrowser', 'Tor', 'tor.exe'),
-        ]
+        ] if IS_WINDOWS else []
         for c in _TOR_CANDIDATES + extra:
             if c and os.path.exists(c):
                 return c
@@ -189,6 +215,10 @@ class TorVpnManager:
                      progress_cb: Optional[Callable[[int, str], None]] = None,
                      ) -> Tuple[bool, str]:
         """Download and extract the Tor Expert Bundle into _TOR_DIR."""
+        if not IS_WINDOWS:
+            return False, ('Tor comes built into ST-SoftwareTool for Mac.\n\n'
+                           'If it is missing, download ST-SoftwareTool again from the website, '
+                           'or install Tor Browser.')
         os.makedirs(_TOR_DIR, exist_ok=True)
         tmp = os.path.join(tempfile.gettempdir(), 'tor_expert_bundle.tar.gz')
 
@@ -250,6 +280,9 @@ class TorVpnManager:
             )
 
         os.makedirs(_DATA_DIR, exist_ok=True)
+        if not IS_WINDOWS:
+            os.chmod(_DATA_DIR, 0o700)          # Tor refuses a DataDirectory others can read
+            _prepare_bundled_tor(tor)
         torrc = self._write_torrc()
 
         if progress_cb:
@@ -263,7 +296,7 @@ class TorVpnManager:
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=NO_WINDOW,
             )
         except OSError as exc:
             return False, f'Could not launch Tor:\n{exc}'
@@ -287,7 +320,16 @@ class TorVpnManager:
             )
 
         self._open_control()
-        self._set_proxy(True)
+        if progress_cb and IS_MAC:
+            progress_cb(100, 'Tor is ready — routing your Mac through it (asks for your password)…')
+        ok, err = self._set_proxy(True)
+        if not ok:
+            self._close_control()
+            self._kill_tor()
+            if err == 'cancelled':
+                return False, ('Connection cancelled — the network settings were not changed, '
+                               'so nothing is routed through Tor.')
+            return False, f'Could not change the network proxy settings:\n{err}'
 
         with self._lock:
             self._connected  = True
@@ -308,9 +350,17 @@ class TorVpnManager:
     # ── public: disconnect ────────────────────────────────────────────────────
 
     def disconnect(self) -> Tuple[bool, str]:
+        if IS_MAC:
+            # Restore the network settings first: if the password dialog is cancelled the VPN
+            # simply stays connected, instead of leaving the Mac pointed at a stopped Tor.
+            ok, err = self._set_proxy(False)
+            if not ok:
+                return False, err
+            self._ks_active = False
         self._stop_process_monitor()
         self._ks_deactivate()
-        self._set_proxy(False)
+        if not IS_MAC:
+            self._set_proxy(False)
         self._close_control()
         self._kill_tor()
         with self._lock:
@@ -340,7 +390,7 @@ class TorVpnManager:
             return 'Snowflake active — traffic tunnelled over WebRTC'
         else:
             self.set_stealth(STEALTH_NONE, [])
-            return 'Standard Tor  (add obfs4proxy.exe for full stealth)'
+            return 'Standard Tor  (no bridge program found for full stealth)'
 
     def pt_status(self) -> Tuple[bool, bool]:
         """Return (obfs4_available, snowflake_available)."""
@@ -524,10 +574,12 @@ class TorVpnManager:
         if not tor:
             return None
         tor_dir = os.path.dirname(tor)
+        exe = f'{name}{_EXE}'
         candidates = [
-            os.path.join(tor_dir, 'PluggableTransports', f'{name}.exe'),
-            os.path.join(tor_dir, '..', 'PluggableTransports', f'{name}.exe'),
-            os.path.join(tor_dir, f'{name}.exe'),
+            os.path.join(tor_dir, 'PluggableTransports', exe),
+            os.path.join(tor_dir, 'pluggable_transports', exe),
+            os.path.join(tor_dir, '..', 'PluggableTransports', exe),
+            os.path.join(tor_dir, exe),
         ]
         for c in candidates:
             normed = os.path.normpath(c)
@@ -768,12 +820,19 @@ class TorVpnManager:
                 with self._lock:
                     self._connected = False
                     self._circuit   = []
-                self._set_proxy(False)
+                # macOS kill switch: leave the proxy pointing at the stopped Tor, so apps that
+                # use it can't connect at all (no leak) until Reconnect or the switch is off.
+                if not (IS_MAC and self._ks_active):
+                    self._set_proxy(False)
                 self._unexpected_drop = True
                 return
 
     def _ks_activate(self) -> bool:
-        """Add a Windows Firewall rule that blocks ALL outbound traffic."""
+        """Add a Windows Firewall rule that blocks ALL outbound traffic.
+        macOS: the proxy simply stays pointed at the stopped Tor (see _monitor_loop)."""
+        if IS_MAC:
+            self._ks_active = True
+            return True
         try:
             r = subprocess.run(
                 ['netsh', 'advfirewall', 'firewall', 'add', 'rule',
@@ -787,13 +846,19 @@ class TorVpnManager:
         return self._ks_active
 
     def _ks_deactivate(self) -> None:
-        """Remove the kill switch firewall rule."""
+        """Remove the kill switch firewall rule (macOS: restore the network settings)."""
         if not self._ks_active:
+            return
+        if IS_MAC:
+            if not self._connected and self._set_proxy(False)[0]:
+                self._ks_active = False
             return
         self._ks_force_cleanup()
 
     def _ks_force_cleanup(self) -> None:
         """Delete the firewall rule unconditionally (handles stale rules from crashes)."""
+        if IS_MAC:
+            return   # nothing to clean up without asking for a password; connect resets it
         try:
             subprocess.run(
                 ['netsh', 'advfirewall', 'firewall', 'delete', 'rule',
@@ -806,7 +871,15 @@ class TorVpnManager:
 
     # ── internal: proxy / process / network ───────────────────────────────────
 
-    def _set_proxy(self, enable: bool):
+    def _set_proxy(self, enable: bool) -> Tuple[bool, str]:
+        """Point the system proxy at Tor (or back to normal). Returns (ok, error); on macOS
+        the error is 'cancelled' when the user cancels the password dialog."""
+        if IS_MAC:
+            return _set_proxy_mac(enable)
+        self._set_proxy_windows(enable)
+        return True, ''
+
+    def _set_proxy_windows(self, enable: bool):
         # Per-type proxy format: http/https through Tor's HTTP CONNECT tunnel
         # (port 8118) and socks through Tor's SOCKS5 port (9050).
         # This format is required — the single-format "host:port" treats port 8118
@@ -876,6 +949,86 @@ class TorVpnManager:
 
 
 # ── module-level helpers ──────────────────────────────────────────────────────
+
+def _prepare_bundled_tor(tor: str) -> None:
+    """macOS: files copied out of a downloaded .dmg carry the quarantine flag, and Gatekeeper
+    would stop Tor and its pluggable transports from starting; also make sure they are
+    executable. Only touches the copy that ships inside the app."""
+    tor_dir = os.path.dirname(tor)
+    if not os.path.realpath(tor_dir).startswith(os.path.realpath(_TOR_DIR)):
+        return
+    subprocess.run(['/usr/bin/xattr', '-dr', 'com.apple.quarantine', _TOR_DIR],
+                   capture_output=True, timeout=10)
+    for folder in (tor_dir, os.path.join(tor_dir, 'pluggable_transports')):
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(folder, name)
+            if os.path.isfile(path) and '.' not in name:   # tor, lyrebird, conjure-client…
+                try:
+                    os.chmod(path, 0o755)
+                except OSError:
+                    pass
+
+
+def mac_network_services() -> List[str]:
+    """Enabled network services (Wi-Fi, Ethernet, …) — each has its own proxy settings."""
+    try:
+        out = subprocess.run([_NETWORKSETUP, '-listallnetworkservices'], capture_output=True,
+                             text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    # First line is an explanation; disabled services start with '*'
+    return [s.strip() for s in out.splitlines()[1:] if s.strip() and not s.startswith('*')]
+
+
+def mac_proxy_state(service: str) -> dict:
+    """Current SOCKS / HTTPS proxy of one service (no password needed to read)."""
+    state = {}
+    for kind, flag in (('socks', '-getsocksfirewallproxy'), ('https', '-getsecurewebproxy')):
+        try:
+            out = subprocess.run([_NETWORKSETUP, flag, service], capture_output=True,
+                                 text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ''
+        info = dict(l.split(':', 1) for l in out.splitlines() if ':' in l)
+        state[kind] = (info.get('Enabled', '').strip() == 'Yes',
+                       info.get('Server', '').strip(), info.get('Port', '').strip())
+    return state
+
+
+def _set_proxy_mac(enable: bool) -> Tuple[bool, str]:
+    """Route (or stop routing) every network service through Tor with one administrator
+    prompt: SOCKS → Tor's SOCKS port, HTTPS → Tor's HTTP CONNECT tunnel. Plain-HTTP requests
+    then go over SOCKS, which every browser supports."""
+    from core.mac_admin import CANCELLED, run_as_admin
+    services = mac_network_services()
+    if not services:
+        return False, 'No network service found (Wi-Fi / Ethernet).'
+    ns = _NETWORKSETUP
+    cmds = []
+    for name in services:
+        q = shlex.quote(name)                      # service names come from the system
+        if enable:
+            bypass = ' '.join(shlex.quote(b) for b in _PROXY_BYPASS)
+            cmds += [f'{ns} -setsocksfirewallproxy {q} 127.0.0.1 {SOCKS_PORT} off',
+                     f'{ns} -setsecurewebproxy {q} 127.0.0.1 {HTTP_TUNNEL} off',
+                     f'{ns} -setproxybypassdomains {q} {bypass}',
+                     f'{ns} -setsocksfirewallproxystate {q} on',
+                     f'{ns} -setsecurewebproxystate {q} on']
+        else:
+            cmds += [f'{ns} -setsocksfirewallproxystate {q} off',
+                     f'{ns} -setsecurewebproxystate {q} off']
+    prompt = ('ST-SoftwareTool wants to route your Mac\'s internet traffic through Tor.'
+              if enable else
+              'ST-SoftwareTool wants to restore your normal network settings (turn off Tor).')
+    ok, err = run_as_admin(' && '.join(cmds), prompt)
+    if not ok:
+        return False, 'cancelled' if err == CANCELLED else err
+    return True, ''
+
 
 def _recv_ctrl(sock: socket.socket, max_bytes: int = 65536) -> str:
     """Read from a Tor control socket until we see a final response line."""

@@ -140,6 +140,7 @@ class MainWindow(QMainWindow):
             p.vpn_clicked.connect(self._popup_vpn_clicked)
             self.gui._perf_worker.perf_ready.connect(p.panel.set_perf)
             self.gui._gpu_worker.gpu_ready.connect(p.panel.set_gpu)
+            self._seed_perf(p.panel)
             self._popup = p
         return self._popup
 
@@ -881,6 +882,7 @@ class MainWindow(QMainWindow):
             w.open_requested.connect(self._tray_open)
             w.remove_requested.connect(lambda: self._set_perf_widget(False))
             w.moved.connect(self._on_perf_widget_moved)
+            self._seed_perf(w)
             w.place(self.manager.settings.get('perf_widget_pos'))
             self._perf_widget = w
             w.show()
@@ -888,6 +890,12 @@ class MainWindow(QMainWindow):
             self._perf_widget.dispose()
             self._perf_widget.deleteLater()
             self._perf_widget = None
+
+    def _seed_perf(self, panel):
+        """Show the latest numbers immediately instead of '—' until the next sample."""
+        if self.gui.last_perf is not None:
+            panel.set_perf(self.gui.last_perf)
+        panel.set_gpu(self.gui.last_gpu)
 
     def _on_perf_widget_moved(self, x: int, y: int):
         self.manager.settings['perf_widget_pos'] = [x, y]

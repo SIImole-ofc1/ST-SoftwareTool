@@ -81,6 +81,10 @@ jobs:
       - name: Smoke test (source)
         run: ST_SMOKE_TEST=15 python main.py
 
+      - name: Download Tor for macOS (signature verified)
+        # The VPN tab runs the official Tor Expert Bundle, shipped inside the app
+        run: bash scripts/fetch-tor-macos.sh ${{ matrix.arch }} build/tor_bundle
+
       - name: Download yt-dlp for macOS (checksum verified)
         run: |
           mkdir -p build/tools
@@ -126,6 +130,9 @@ jobs:
           rm -rf "build/ST-SoftwareTool.app"
           mv "$app" "build/ST-SoftwareTool.app"
           chmod +x build/ST-SoftwareTool.app/Contents/MacOS/tools/yt-dlp_macos || true
+          # Tor for the VPN tab (core/vpn_manager.py looks for Contents/MacOS/core/tor_bundle)
+          mkdir -p build/ST-SoftwareTool.app/Contents/MacOS/core
+          cp -R build/tor_bundle build/ST-SoftwareTool.app/Contents/MacOS/core/tor_bundle
           ls -la build/ST-SoftwareTool.app/Contents/MacOS | head -20
 
       - name: Set minimum macOS version
@@ -166,6 +173,13 @@ jobs:
 
       - name: Sign app (ad-hoc)
         run: |
+          # Tor's programs and libraries: sign any that aren't signed yet, so the app's seal
+          # covers them (macOS refuses to run unsigned code inside a signed app)
+          find build/ST-SoftwareTool.app/Contents/MacOS/core/tor_bundle -type f | while read -r f; do
+            if file "$f" | grep -q 'Mach-O'; then
+              codesign -v "$f" 2>/dev/null || codesign --force --sign - "$f"
+            fi
+          done
           codesign --force --deep --sign - build/ST-SoftwareTool.app
           codesign --verify --deep --strict --verbose=2 build/ST-SoftwareTool.app
 
@@ -175,7 +189,9 @@ jobs:
           echo "bin=$bin" >> "$GITHUB_ENV"
           echo "Launching $bin"
           set -o pipefail
-          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots ST_SMOKE_HTTPS=1 ST_SMOKE_WIDGET=1 "$bin" | tee build/smoke.log
+          ST_SMOKE_TEST=20 ST_SMOKE_SHOTS=build/app-shots ST_SMOKE_HTTPS=1 ST_SMOKE_WIDGET=1 ST_SMOKE_TOR=1 "$bin" | tee build/smoke.log
+          # The VPN must use the Tor that ships inside the app, and it must run
+          grep -q "SMOKE tor='.*/ST-SoftwareTool.app/Contents/MacOS/core/tor_bundle/tor/tor' version='Tor version" build/smoke.log
           # The app must recognise its own bundle (Task Manager, Open at Login, updates use it)
           grep -q "bundle='.*/ST-SoftwareTool.app'" build/smoke.log
           # HTTPS must use the certificates shipped inside the app, not a file that only exists

@@ -80,6 +80,23 @@ def _smoke_test(app, window, seconds: float) -> None:
         print(f"SMOKE executable={sys.executable!r} own={own_executable()!r} "
               f"bundle={mac_app_bundle()!r} task_cmd={window.gui._task_backend._cmd!r}",
               flush=True)
+        if os.environ.get("ST_SMOKE_TOR"):
+            # The VPN's Tor: found, prepared like a connect does, and able to run
+            import subprocess
+            from core import vpn_manager
+            tor = vpn_manager.TorVpnManager().find_tor()
+            version = ''
+            if tor:
+                if sys.platform == "darwin":
+                    vpn_manager._prepare_bundled_tor(tor)
+                try:
+                    version = subprocess.run([tor, '--version'], capture_output=True, text=True,
+                                             timeout=20).stdout.strip().splitlines()[0]
+                except Exception as exc:
+                    version = f'failed: {exc}'
+            print(f"SMOKE tor={tor!r} version={version!r}", flush=True)
+            if not tor or not version.startswith('Tor version'):
+                errors.append(f"VPN: Tor not found or not runnable ({tor}, {version})")
         if os.environ.get("ST_SMOKE_HTTPS"):
             # The real update check, over HTTPS, as the user's app does it
             from core import updater
@@ -188,11 +205,14 @@ def _smoke_test(app, window, seconds: float) -> None:
               f"icon={window._tray.geometry().getRect()}", flush=True)
         if not popup.isVisible():
             errors.append("Menu-bar popup did not open")
-        if shots_dir:
-            popup.grab().save(os.path.join(shots_dir, "menubar-popup.png"))
-            subprocess.run(['screencapture', '-x', os.path.join(shots_dir, 'desktop-with-popup.png')],
-                           timeout=20)
-        popup.hide()
+
+        def capture():   # once macOS has drawn it
+            if shots_dir:
+                popup.grab().save(os.path.join(shots_dir, "menubar-popup.png"))
+                subprocess.run(['screencapture', '-x',
+                                os.path.join(shots_dir, 'desktop-with-popup.png')], timeout=20)
+            popup.hide()
+        QTimer.singleShot(1200, capture)
 
     # Closing the window (what the red button does) must keep the app in the menu bar with the
     # widget, without a Dock icon; opening the app again must bring the window back.
