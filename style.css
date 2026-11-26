@@ -655,6 +655,8 @@ section + section {
 }
 .cmd-window { display: flex; flex-direction: column; }
 .cmd-terminal { flex: 1; font-size: 12px; min-height: 260px; }
+/* Same 16px inset as the "Example Session" title, with room above the window's bottom edge */
+.cmd-hint { margin: 0; padding: 2px 16px 12px; }
 
 .cmd-table {
     border-collapse: collapse;
