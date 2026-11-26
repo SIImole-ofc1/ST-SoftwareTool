@@ -25,11 +25,24 @@ def open_path(path: str) -> None:
         subprocess.Popen(['xdg-open', path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def own_executable() -> str:
+    """Real path of the running program file: the app binary in a packaged build, the Python
+    interpreter in development. Asks the OS, because sys.executable isn't reliable for this
+    in every packaging mode."""
+    try:
+        import psutil
+        return os.path.realpath(psutil.Process().exe())
+    except Exception:
+        return os.path.realpath(sys.executable)
+
+
 def mac_app_bundle() -> str | None:
     """Path of the running ST-SoftwareTool.app bundle (macOS build), else None."""
     if not IS_MAC:
         return None
-    path = os.path.realpath(sys.executable)
     marker = '.app/Contents/MacOS/'
-    i = path.find(marker)
-    return path[:i + 4] if i != -1 else None
+    for path in (own_executable(), os.path.realpath(sys.executable)):
+        i = path.find(marker)
+        if i != -1:
+            return path[:i + 4]
+    return None

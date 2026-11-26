@@ -108,9 +108,10 @@ class _TaskWorker(QThread):
                 self._wake.clear()
                 continue
 
-            # Ensure proc_monitor subprocess is running
+            # Ensure proc_monitor subprocess is running; without one, read_procs() collects
+            # in this thread instead (slower, but the list is never left empty)
             if not self._backend.is_alive():
-                if not self._backend.start_monitor():
+                if not self._backend.start_monitor() and not self._backend.can_read_inline:
                     self._wake.wait(timeout=5.0)
                     self._wake.clear()
                     continue

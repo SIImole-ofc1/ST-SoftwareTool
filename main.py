@@ -56,6 +56,10 @@ def _smoke_test(app, window, seconds: float) -> None:
 
     def visit_tabs():
         from PySide6.QtGui import QFontInfo
+        from core.osinfo import mac_app_bundle, own_executable
+        print(f"SMOKE executable={sys.executable!r} own={own_executable()!r} "
+              f"bundle={mac_app_bundle()!r} task_cmd={window.gui._task_backend._cmd!r}",
+              flush=True)
         for family in ("Consolas", "Segoe UI"):
             info = QFontInfo(QFont(family, 9))
             print(f"SMOKE font '{family}' -> '{info.family()}' fixedPitch={info.fixedPitch()}",
@@ -82,11 +86,26 @@ def _smoke_test(app, window, seconds: float) -> None:
         import re
         tabs = window.gui.tabs
         if i >= tabs.count():
+            # Every tab has now had time to load: the Task Manager must list processes
+            model = getattr(window.gui, '_proc_model', None)
+            rows = model.rowCount() if model is not None else -1
+            print(f"SMOKE task manager rows={rows}", flush=True)
+            if rows == 0:
+                errors.append("Task Manager listed no processes")
             finish()
             return
         tabs.setCurrentIndex(i)
+        waited = [0]
 
         def grab():
+            # The Task Manager's first list can take a while (slow machines, antivirus
+            # scanning): wait for it, up to 20 s
+            model = getattr(window.gui, '_proc_model', None)
+            if (i == window.gui._task_tab_idx and model is not None and model.rowCount() == 0
+                    and waited[0] < 16):
+                waited[0] += 1
+                QTimer.singleShot(1000, grab)
+                return
             name = re.sub(r'[^A-Za-z0-9]+', '-', tabs.tabText(i)).strip('-').lower()
             path = os.path.join(shots_dir, f"tab-{i:02d}-{name}.png")
             window.grab().save(path)

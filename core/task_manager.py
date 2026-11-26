@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW, mac_app_bundle
+from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW, mac_app_bundle, own_executable
 
 try:
     import psutil as _psutil
@@ -39,7 +39,7 @@ def _find_monitor_cmd() -> List[str]:
         return [sys.executable, py]
     # macOS app: the main binary runs the collector when started with --proc-monitor
     if IS_MAC and mac_app_bundle():
-        return [sys.executable, '--proc-monitor']
+        return [own_executable(), '--proc-monitor']
     return []
 
 
@@ -133,6 +133,11 @@ class TaskManagerBackend:
                 except Exception:
                     pass
                 self._proc = None
+
+    @property
+    def can_read_inline(self) -> bool:
+        """read_procs() can collect without the subprocess (psutil in this process)."""
+        return _psutil is not None
 
     def is_alive(self) -> bool:
         with self._lock:
