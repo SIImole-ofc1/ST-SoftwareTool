@@ -33,9 +33,12 @@
 <main class="legal-main">
     <article class="legal-document">
         <h1>Privacy Policy &amp; Terms of Use - SIImole</h1>
+        <p style="font-size:12px;color:#aab7ca;margin-top:-4px">Last updated: 26 November 2026</p>
         <nav class="legal-index" aria-label="On this page">
             <a href="#sec-data">Your Data</a>
+            <a href="#sec-online">What Goes Online</a>
             <a href="#sec-vpn">ST-VPN</a>
+            <a href="#sec-website">This Website</a>
             <a href="#sec-control">Your Control</a>
             <a href="#sec-ip">Terms of Use</a>
             <a href="#sec-contact">Contact</a>
@@ -44,22 +47,71 @@
         <section id="sec-data" class="legal-section">
             <h2>1. Your Data</h2>
             <p>
-                SIImole does not collect any data on servers or networks that we own or operate.
-                Everything the software generates - chat history, settings, cached files, logs -
-                is created and stored only on your own device, in the location where the application
-                is installed or configured to store its data. Nothing is sent to us, because we have
-                no systems set up to receive it. What happens on your device stays on your device.
+                SIImole does not run any servers that collect data, and ST-SoftwareTool never sends
+                your personal data, your files or your activity to us. There are no accounts, ads,
+                analytics or telemetry.
             </p>
             <p>
-                Since we do not collect or handle any personal data, the traditional Data controller
-                rules under GDPR do not apply to us. That said, if you ever have a question or concern
-                about how the software handles your data, feel free to reach out at
+                Everything the software keeps - settings, your app list, logs, the antivirus quarantine
+                and its record of already-checked file fingerprints, and the VPN's Tor data - is stored
+                only on your own device, in the app's data folder.
+            </p>
+            <p>
+                A few features need the internet to work. They contact the services listed in the next
+                section directly - never SIImole. If you ever have a question or concern about how the
+                software handles your data, feel free to reach out at
                 <a href="mailto:siimole.official@gmail.com">siimole.official@gmail.com</a>.
             </p>
         </section>
 
+        <section id="sec-online" class="legal-section">
+            <h2>2. What ST-SoftwareTool Connects To</h2>
+            <ul>
+                <li>
+                    <strong>Update checks:</strong> when the app starts, and every 6 hours while it runs,
+                    it asks GitHub (api.github.com) - or, as a backup, this website - whether a newer
+                    version exists. An update is only downloaded, from GitHub, after you agree.
+                </li>
+                <li>
+                    <strong>Antivirus:</strong> to recognise known malware, ST-AntiVirus checks each scanned
+                    file's fingerprint (its SHA-1 hash) against the free Team Cymru Malware Hash Registry.
+                    Only the fingerprint is sent - never the file, its name or its contents. The check is a
+                    DNS lookup: on Windows through your normal DNS provider, on a Mac (or if that fails)
+                    through Cloudflare's encrypted DNS (cloudflare-dns.com). Answers are remembered on your
+                    device, so the same file is not checked again. This happens when you run a scan and
+                    during the hourly automatic scan, which is on by default and can be turned off in Settings.
+                </li>
+                <li>
+                    <strong>Your IP address:</strong> when ST-SoftwareTool starts, the VPN tab asks ipify
+                    (api.ipify.org) for your public IPv4 and IPv6 address so it can show them. While the
+                    VPN is connected, it checks your Tor exit address through Tor (ipify or
+                    checkip.amazonaws.com).
+                </li>
+                <li><strong>ST-VPN:</strong> only while you are connected - see section 3.</li>
+                <li>
+                    <strong>Video downloads:</strong> only when you use the YouTube download command; the
+                    built-in yt-dlp tool then connects to that video site.
+                </li>
+                <li>
+                    <strong>Download Tor (Windows):</strong> only if you click it; it fetches the Tor Expert
+                    Bundle from torproject.org. The Mac app already includes Tor.
+                </li>
+            </ul>
+            <p>
+                Like any internet request, these show your IP address to the service being contacted, and
+                each service handles requests under its own privacy policy. ST-SoftwareTool does not connect
+                anywhere else: no ads, no analytics, no telemetry, no tracking.
+            </p>
+            <p>
+                <strong>Automatic actions:</strong> by default, ST-AntiVirus blocks critical threats it
+                finds - for example by moving the file into a quarantine folder on your device or stopping
+                the program. You can turn this off in Settings. Otherwise the app only changes your system
+                when you ask it to.
+            </p>
+        </section>
+
         <section id="sec-vpn" class="legal-section">
-            <h2>2. ST-VPN (Powered by Tor)</h2>
+            <h2>3. ST-VPN (Powered by Tor)</h2>
             <p>
                 ST-VPN routes your connection through three independent Tor relays (Guard, Middle, Exit),
                 masking both your IPv4 and IPv6 address from every site you visit. A built-in stealth mode
@@ -69,8 +121,17 @@
                 protected Tor IP so you can confirm you're covered before you browse.
             </p>
             <p>
-                ST-VPN requires no account, no third-party server, and no monthly fee - it runs entirely
-                on the free, public Tor network. We keep no logs and have no visibility into your traffic.
+                ST-VPN requires no account, no VPN company, and no monthly fee - it runs on the free, public
+                Tor network, whose relays are run by volunteers around the world. We keep no logs and have
+                no visibility into your traffic.
+            </p>
+            <p>
+                When you connect, ST-VPN points your computer's proxy settings at Tor (on a Mac, macOS asks
+                for your password), and disconnecting restores them. Apps that use these settings - such as
+                web browsers - go through Tor; apps that ignore them connect directly. Stealth mode connects
+                through Tor bridges; its Snowflake option also contacts the Tor Project's Snowflake broker
+                (through a content delivery network) and public STUN servers, such as Google's, to set up
+                the connection.
             </p>
             <p>
                 <strong>Important:</strong> As with any service built on the public Tor network, the final
@@ -79,24 +140,36 @@
                 specific to ST-VPN. For the strongest protection, we recommend using HTTPS-secured websites
                 while ST-VPN is active.
             </p>
+        </section>
+
+        <section id="sec-website" class="legal-section">
+            <h2>4. This Website</h2>
             <p>
-                We do not use any other third-party services, analytics, or tracking tools. No ads,
-                no telemetry, no background data collection.
+                This website is hosted on Cloudflare Pages. To deliver it and protect it from attacks,
+                Cloudflare processes your IP address and standard request information, as any web host does.
+                When you open the main page, your browser asks GitHub's API for the latest version number and
+                which downloads are available, so GitHub also receives your IP address. Downloads come
+                straight from GitHub.
+            </p>
+            <p>
+                The site uses no cookies, stores nothing in your browser, and has no analytics, ads or
+                trackers. That is also why the privacy notice appears on every visit: your choice is not saved.
             </p>
         </section>
 
         <section id="sec-control" class="legal-section">
-            <h2>3. Your Control Over Your Data</h2>
+            <h2>5. Your Control Over Your Data</h2>
             <p>Because everything is stored locally, you're always in full control:</p>
             <ul>
                 <li><strong>View or back up:</strong> Access or copy your files anytime from the app data folder on your device.</li>
                 <li><strong>Delete or uninstall:</strong> Removing the software and its data clears all traces from your device.</li>
+                <li><strong>Turn features off:</strong> The hourly scan and automatic blocking can be switched off in Settings, and the VPN only connects when you choose.</li>
                 <li><strong>No sign-up:</strong> No account or personal registration is required to use SIImole.</li>
             </ul>
         </section>
 
         <section id="sec-ip" class="legal-section">
-            <h2>4. Terms of Use &amp; Intellectual Property</h2>
+            <h2>6. Terms of Use &amp; Intellectual Property</h2>
             <p>
                 All source code, designs, branding, and other materials that make up SIImole belong to
                 the SIImole Team and are protected under copyright law.
