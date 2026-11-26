@@ -61,6 +61,8 @@ jobs:
           python -m pip install "PySide6==6.8.*" psutil nuitka ordered-set zstandard
 
       - name: Read app version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}  # via env, never pasted into the script
         run: |
           VERSION=$(python -c "import re; print(re.search(r'APP_VERSION = \"([^\"]+)\"', open('core/updater.py', encoding='utf-8-sig').read()).group(1))")
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -68,7 +70,7 @@ jobs:
           # A release must contain its own version bump, otherwise Macs would be offered
           # the same "update" forever.
           if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
+            tag="$RELEASE_TAG"
             if [ "v$VERSION" != "$tag" ]; then
               echo "::error::Code says $VERSION but the release tag is $tag"
               exit 1
@@ -222,4 +224,5 @@ jobs:
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "build/$DMG_NAME" --clobber
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" "build/$DMG_NAME" --clobber

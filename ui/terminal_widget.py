@@ -116,6 +116,7 @@ class _YtWorker(QThread):
             "--output", outtmpl,
             "--newline",
             "--no-warnings",
+            "--",  # everything after this is a URL, never a yt-dlp option
             self._url,
         ]
         try:

@@ -7,6 +7,19 @@ __pycache__/
 python_path.txt
 data/apps.json
 
+# Secrets — keys, tokens and certificates never belong in the repo
+.env
+.env.*
+.dev.vars
+*.pem
+*.key
+*.pfx
+*.p12
+*.keystore
+*.jks
+credentials*.json
+secrets*.json
+
 # Logs
 debug.log
 *.log

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import os
 import platform
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from typing import NamedTuple
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
@@ -52,6 +57,33 @@ _busy = False                  # a check, prompt or download is in progress
 _declined: set[str] = set()    # versions the user said "No" to (auto checks stay quiet about them)
 
 
+_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,3}")
+_DOWNLOAD_DIR_PREFIX = "st-installer-"
+
+
+class _Asset(NamedTuple):
+    """The installer file to download, with what the release says it should be."""
+    url: str
+    sha256: str = ""  # lowercase hex from GitHub's asset digest; "" when the source gives none
+    size: int = 0     # bytes; 0 when unknown
+
+
+class _VerifyError(Exception):
+    """The downloaded file is not the one the release describes."""
+
+
+class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow redirects (GitHub sends downloads on to its file CDN), but never to plain HTTP."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).scheme.lower() != "https":
+            raise urllib.error.HTTPError(newurl, code, "refused a non-HTTPS redirect", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(_HttpsOnlyRedirects)
+
+
 def _ver(v: str) -> tuple:
     try:
         return tuple(int(x) for x in v.strip().lstrip("v").split("."))
@@ -59,30 +91,57 @@ def _ver(v: str) -> tuple:
         return (0,)
 
 
+def _trusted_download(url: str) -> bool:
+    """Only this repository's own GitHub release file for this computer, over HTTPS."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    if (parts.scheme != "https" or parts.netloc.lower() != "github.com"
+            or parts.query or parts.fragment):
+        return False
+    pattern = rf"/{re.escape(_REPO)}/releases/download/v?\d+(?:\.\d+)*/{re.escape(installer_name())}"
+    return re.fullmatch(pattern, parts.path, re.IGNORECASE) is not None
+
+
+def _sha256_from(asset: dict) -> str:
+    """GitHub lists each release file's checksum as "digest": "sha256:<hex>"."""
+    algo, _, value = str(asset.get("digest") or "").partition(":")
+    value = value.strip().lower()
+    return value if algo.lower() == "sha256" and re.fullmatch(r"[0-9a-f]{64}", value) else ""
+
+
 def _get_json(url: str) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT,
                                                "Cache-Control": "no-cache"})
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        return json.loads(resp.read().decode("utf-8-sig"))
+    with _opener.open(req, timeout=_TIMEOUT) as resp:
+        data = json.loads(resp.read().decode("utf-8-sig"))
+    if not isinstance(data, dict):
+        raise ValueError("unexpected response format")
+    return data
 
 
-def _from_github() -> tuple[str, str]:
+def _from_github() -> tuple[str, _Asset | None]:
     data = _get_json(_RELEASES_API)
-    ver = data.get("tag_name", "").lstrip("v")
+    ver = str(data.get("tag_name") or "").lstrip("v")
     want = installer_name().lower()
-    url = next((a["browser_download_url"] for a in data.get("assets", [])
-                if a.get("name", "").lower() == want), "")
-    return ver, url
+    for a in data.get("assets") or []:
+        if isinstance(a, dict) and str(a.get("name", "")).lower() == want:
+            size = a.get("size")
+            return ver, _Asset(str(a.get("browser_download_url") or ""), _sha256_from(a),
+                               size if isinstance(size, int) and size > 0 else 0)
+    return ver, None
 
 
-def _from_website() -> tuple[str, str]:
+def _from_website() -> tuple[str, _Asset | None]:
     data = _get_json(_LATEST_JSON)
-    ver = str(data.get("version", "")).lstrip("v")
+    ver = str(data.get("version") or "").lstrip("v")
     if IS_WINDOWS:
-        return ver, data.get("url", "")
-    # macOS builds are attached to the same GitHub release under a fixed name
-    url = f"https://github.com/{_REPO}/releases/download/v{ver}/{installer_name()}" if ver else ""
-    return ver, url
+        url = str(data.get("url") or "")
+    else:
+        # macOS builds are attached to the same GitHub release under a fixed name
+        url = f"https://github.com/{_REPO}/releases/download/v{ver}/{installer_name()}" if ver else ""
+    return ver, (_Asset(url) if url else None)  # the website gives no checksum
 
 
 def _describe(exc: Exception) -> str:
@@ -104,8 +163,8 @@ def _log(msg: str) -> None:
         pass
 
 
-def _fetch_latest() -> tuple[str, str, str]:
-    """Return (result, installer_url, error_detail).
+def _fetch_latest() -> tuple[str, _Asset | None, str]:
+    """Return (result, installer, error_detail).
 
     result is a version string, _UPTODATE or _ERROR. Tries the GitHub API first and falls
     back to the website's download/latest.json (no rate limit, works through the VPN too).
@@ -113,26 +172,33 @@ def _fetch_latest() -> tuple[str, str, str]:
     errors = []
     for name, source in (("GitHub", _from_github), ("website", _from_website)):
         try:
-            ver, url = source()
+            ver, asset = source()
         except Exception as exc:
             errors.append(f"{name}: {_describe(exc)}")
             continue
         if not ver:
             errors.append(f"{name}: no version in response")
             continue
+        if not _VERSION_RE.fullmatch(ver):
+            errors.append(f"{name}: unexpected version {ver[:40]!r}")
+            continue
         if _ver(ver) <= _ver(APP_VERSION):
-            return _UPTODATE, "", ""
-        if url:
-            return ver, url, ""
+            return _UPTODATE, None, ""
+        if asset and not _trusted_download(asset.url):
+            errors.append(f"{name}: refused a download address outside the official releases "
+                          f"({asset.url[:120]})")
+            continue
+        if asset:
+            return ver, asset, ""
         errors.append(f"{name}: v{ver} has no {installer_name()} file")
         if not IS_WINDOWS:
             # GitHub answered: this release simply has no build for this Mac yet.
             # (The website only lists versions, so it can't offer a different file.)
-            return _UPTODATE, "", ""
+            return _UPTODATE, None, ""
 
     detail = "\n".join(errors)
     _log("update check failed | " + detail.replace("\n", " | "))
-    return _ERROR, "", detail
+    return _ERROR, None, detail
 
 
 def start_auto_updates(parent) -> None:
@@ -167,11 +233,11 @@ def check_for_update(parent, force: bool = False) -> None:
         checking.setMinimumDuration(0)
         checking.show()
 
-    state: dict = {"done": False, "result": _ERROR, "url": "", "detail": ""}
+    state: dict = {"done": False, "result": _ERROR, "asset": None, "detail": ""}
 
     def _worker():
         try:
-            state["result"], state["url"], state["detail"] = _fetch_latest()
+            state["result"], state["asset"], state["detail"] = _fetch_latest()
         except Exception as exc:  # never leave the poller waiting forever
             state["detail"] = _describe(exc)
         finally:
@@ -186,7 +252,7 @@ def check_for_update(parent, force: bool = False) -> None:
             return
         if checking is not None:
             checking.close()
-        result, url = state["result"], state["url"]
+        result, asset = state["result"], state["asset"]
         try:
             if result == _UPTODATE:
                 if force:
@@ -202,7 +268,7 @@ def check_for_update(parent, force: bool = False) -> None:
                         "Check your internet connection (and the VPN, if it is on) "
                         "and try again.")
             elif force or result not in _declined:
-                if _prompt_and_download(parent, result, url):
+                if _prompt_and_download(parent, result, asset):
                     return  # download running; it clears _busy when it ends
         except RuntimeError:
             pass  # parent window was destroyed before the result arrived
@@ -211,7 +277,7 @@ def check_for_update(parent, force: bool = False) -> None:
     QTimer.singleShot(200, _poll)
 
 
-def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> bool:
+def _prompt_and_download(parent, remote_ver: str, asset: _Asset) -> bool:
     """Ask to update; on Yes start the download. Returns True if a download started."""
     if parent.isHidden():  # running in the tray: bring the window up so the prompt is seen
         parent.showNormal()
@@ -231,12 +297,35 @@ def _prompt_and_download(parent, remote_ver: str, asset_url: str) -> bool:
         _declined.add(remote_ver)
         return False
 
-    _download_and_install(parent, remote_ver, asset_url)
+    _download_and_install(parent, remote_ver, asset)
     return True
 
 
-def _download_and_install(parent, remote_ver: str, asset_url: str) -> None:
-    installer_path = os.path.join(tempfile.gettempdir(), installer_name())
+def _new_download_dir() -> str:
+    """A fresh folder with a unique name (owner-only on macOS) for the installer, so nothing
+    can pre-place or swap a file at a known path. Folders left by earlier updates are removed."""
+    base = tempfile.gettempdir()
+    try:
+        for name in os.listdir(base):
+            if name.startswith(_DOWNLOAD_DIR_PREFIX):
+                shutil.rmtree(os.path.join(base, name), ignore_errors=True)
+    except OSError:
+        pass
+    return tempfile.mkdtemp(prefix=_DOWNLOAD_DIR_PREFIX)
+
+
+def _download_and_install(parent, remote_ver: str, asset: _Asset) -> None:
+    global _busy
+    try:
+        installer_path = os.path.join(_new_download_dir(), installer_name())
+    except OSError as exc:
+        _busy = False
+        _log(f"update v{remote_ver}: could not create a download folder: {exc}")
+        QMessageBox.warning(parent, "Update Failed",
+                            "Could not prepare the update download. Please try again later.")
+        return
+    if not asset.sha256:
+        _log(f"update v{remote_ver}: source gave no checksum; relying on the official address only")
 
     progress = QProgressDialog(
         f"Downloading ST-SoftwareTool v{remote_ver}...", "Cancel", 0, 100, parent
@@ -247,7 +336,8 @@ def _download_and_install(parent, remote_ver: str, asset_url: str) -> None:
     progress.setValue(0)
     progress.show()
 
-    state: dict = {"pct": 0, "done": False, "error": False, "cancelled": False}
+    # error: "" (none), "download" (network/disk problem) or "verify" (file isn't the release's)
+    state: dict = {"pct": 0, "done": False, "error": "", "cancelled": False}
 
     def _remove_installer():
         try:
@@ -257,8 +347,9 @@ def _download_and_install(parent, remote_ver: str, asset_url: str) -> None:
 
     def _download():
         try:
-            req = urllib.request.Request(asset_url, headers={"User-Agent": _USER_AGENT})
-            with urllib.request.urlopen(req, timeout=180) as r:
+            req = urllib.request.Request(asset.url, headers={"User-Agent": _USER_AGENT})
+            sha = hashlib.sha256()
+            with _opener.open(req, timeout=180) as r:
                 try:
                     total = int(r.headers.get("Content-Length", 0) or 0)
                 except (ValueError, TypeError):
@@ -270,17 +361,28 @@ def _download_and_install(parent, remote_ver: str, asset_url: str) -> None:
                         if not chunk:
                             break
                         f.write(chunk)
+                        sha.update(chunk)
                         received += len(chunk)
                         if total:
                             state["pct"] = min(99, int(received * 100 / total))
             if state["cancelled"]:
                 _remove_installer()
-            elif total and received < total:
+                return
+            if total and received < total:
                 raise IOError("incomplete download")
-            else:
-                state["done"] = True
-        except Exception:
-            state["error"] = True
+            if asset.size and received != asset.size:
+                raise _VerifyError(f"{received} bytes, the release lists {asset.size}")
+            if asset.sha256 and sha.hexdigest() != asset.sha256:
+                raise _VerifyError(f"SHA-256 {sha.hexdigest()} does not match the release's "
+                                   f"{asset.sha256}")
+            state["done"] = True
+        except _VerifyError as exc:
+            _log(f"update v{remote_ver} rejected: {exc}")
+            state["error"] = "verify"
+            _remove_installer()
+        except Exception as exc:
+            _log(f"update v{remote_ver} download failed: {_describe(exc)}")
+            state["error"] = "download"
             _remove_installer()
 
     threading.Thread(target=_download, daemon=True).start()
@@ -294,8 +396,14 @@ def _download_and_install(parent, remote_ver: str, asset_url: str) -> None:
         if state["error"]:
             progress.close()
             _busy = False
-            QMessageBox.warning(parent, "Update Failed",
-                                "Could not download the update. Please try again later.")
+            if state["error"] == "verify":
+                QMessageBox.warning(parent, "Update Failed",
+                                    "The downloaded update did not match the official release "
+                                    "file, so it was deleted and not installed.\n\n"
+                                    "Please try again later, or download it from the website.")
+            else:
+                QMessageBox.warning(parent, "Update Failed",
+                                    "Could not download the update. Please try again later.")
             return
         if state["done"]:
             progress.setValue(100)
@@ -358,7 +466,7 @@ def _launch_installer(path: str) -> bool:
 
 
 def _launch_mac_installer(dmg: str) -> bool:
-    script = os.path.join(tempfile.gettempdir(), "st-install-update.sh")
+    script = os.path.join(os.path.dirname(dmg), "st-install-update.sh")  # private download folder
     try:
         with open(script, "w") as f:
             f.write(_MAC_INSTALL_SCRIPT)

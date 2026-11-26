@@ -16,16 +16,23 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update version in index.html
+        env:
+          VERSION: ${{ github.event.release.tag_name }}  # via env, never pasted into the script
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
+          # The tag ends up in the website's HTML, so only accept plain versions like v1.0.23
+          if ! [[ "$VERSION" =~ ^v[0-9]+(\.[0-9]+){1,3}$ ]]; then
+            echo "::error::Release tag '$VERSION' is not a plain version like v1.0.23"
+            exit 1
+          fi
           # Replace content of every .gh-version span
           sed -i 's|<span class="gh-version">[^<]*</span>|<span class="gh-version">'"$VERSION"'</span>|g' index.html
           echo "Updated index.html to $VERSION"
           grep 'gh-version' index.html | head -3
 
       - name: Commit and push
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
