@@ -1372,6 +1372,16 @@ class GUIView(QWidget):
                   "It follows your Mac's Light / Dark mode.")
         return box
 
+    def sync_theme_choice(self, theme: str):
+        """Check the Settings radio for a theme chosen elsewhere (menu, terminal), so
+        Apply Changes doesn't switch it back."""
+        rb = {
+            "dark": self.rb_dark, "dark_bw": self.rb_dark_bw, "light": self.rb_light,
+            "hc": self.rb_hc, "win95": self.rb_win95, glass.THEME_KEY: self.rb_glass,
+        }.get(theme)
+        if rb is not None and not rb.isChecked():
+            rb.setChecked(True)
+
     def _reset_glass(self):
         self.sl_gloss.setValue(glass.DEFAULT_GLOSS)
         self.sl_blur.setValue(glass.DEFAULT_BLUR)

@@ -1,5 +1,5 @@
 /* Download section: Windows / macOS switch (RubberSegment), typed thank-you (TextType),
- * a "Downloading ST" toast (SwipeToast), and a check that the macOS files are actually published in the latest release. */
+ * a "Downloading ST" toast (SwipeToast), and download links that always point at a release which really has the file. */
 (function () {
     'use strict';
 
@@ -95,29 +95,55 @@
             });
         });
 
-        // ── macOS files: only offer them once a release actually contains them ─
-        const checkMacFiles = release => {
-            const names = new Set((release.assets || []).map(a => a.name));
-            const ready = MAC_FILES.every(name => names.has(name));
-            section.querySelectorAll('.download-pane[data-platform="macos"] a[data-download]').forEach(a => {
-                a.classList.toggle('is-unavailable', !ready);
-                if (ready) {
-                    a.removeAttribute('aria-disabled');
-                    a.removeAttribute('tabindex');
-                } else {
-                    a.setAttribute('aria-disabled', 'true');
-                    a.setAttribute('tabindex', '-1');
+        // ── Each button downloads from the newest release that has its file ──
+        // A release can be published before every file is attached (the macOS .dmg files
+        // are built afterwards, and a release may ship for one OS first). Until then the
+        // button uses the previous release's file instead of a broken /latest/ link.
+        let olderReleases = null;
+        const listReleases = () => olderReleases || (olderReleases =
+            fetch('https://api.github.com/repos/SIImole-ofc1/ST-SoftwareTool/releases?per_page=15', {
+                headers: { Accept: 'application/vnd.github.v3+json' }
+            }).then(r => (r.ok ? r.json() : [])).catch(() => []));
+        const assetIn = (release, name) => (release.assets || []).find(a => a.name === name);
+
+        const setAvailable = (a, ok) => {
+            a.classList.toggle('is-unavailable', !ok);
+            if (ok) {
+                a.removeAttribute('aria-disabled');
+                a.removeAttribute('tabindex');
+            } else {
+                a.setAttribute('aria-disabled', 'true');
+                a.setAttribute('tabindex', '-1');
+            }
+        };
+
+        const resolveDownloads = async latest => {
+            const links = Array.from(section.querySelectorAll('a[data-download]'));
+            let macReady = true;
+            for (const a of links) {
+                const name = (a.getAttribute('href') || '').split('/').pop();
+                if (!name) continue;
+                let asset = assetIn(latest, name);
+                if (!asset) {
+                    const releases = await listReleases();
+                    const older = releases.find(r => !r.draft && !r.prerelease && assetIn(r, name));
+                    asset = older && assetIn(older, name);
                 }
-            });
+                if (asset) a.href = asset.browser_download_url;
+                if (MAC_FILES.includes(name)) {
+                    setAvailable(a, Boolean(asset));
+                    macReady = macReady && Boolean(asset);
+                }
+            }
             const note = section.querySelector('.mac-coming-soon');
-            if (note) note.hidden = ready;
+            if (note) note.hidden = macReady;
         };
         section.addEventListener('click', event => {
             const a = event.target.closest('a[data-download][aria-disabled="true"]');
             if (a) event.preventDefault();
         });
-        if (window.stLatestRelease) checkMacFiles(window.stLatestRelease);
-        window.addEventListener('st:release', event => checkMacFiles(event.detail));
+        if (window.stLatestRelease) resolveDownloads(window.stLatestRelease);
+        window.addEventListener('st:release', event => resolveDownloads(event.detail));
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

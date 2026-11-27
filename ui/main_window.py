@@ -516,6 +516,7 @@ class MainWindow(QMainWindow):
             pass
         self.terminal.set_theme(theme)
         self.gui.set_perf_theme(theme)
+        self.gui.sync_theme_choice(theme)
         self._apply_theme()
 
     def _on_glass_changed(self):
