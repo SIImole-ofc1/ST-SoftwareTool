@@ -745,9 +745,8 @@ class GUIView(QWidget):
 
     @staticmethod
     def _fmt_kb(kb: float) -> str:
-        if kb >= 1024:
-            return f"{kb / 1024:.1f} MB/s"
-        return f"{kb:.0f} KB/s"
+        from core.performance_monitor import fmt_rate
+        return fmt_rate(kb)
 
     # ── device manager helpers ────────────────────────────────────────────────
 

@@ -49,8 +49,7 @@ def _disk_percent() -> Optional[float]:
     return None
 
 
-def _fmt_rate(kb_s: float) -> str:
-    return f'{kb_s / 1024:.1f} MB/s' if kb_s >= 1024 else f'{kb_s:.0f} KB/s'
+from core.performance_monitor import fmt_rate as _fmt_rate      # noqa: E402
 
 
 def is_dark() -> bool:

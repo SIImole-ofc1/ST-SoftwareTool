@@ -44,8 +44,7 @@ def is_dark() -> bool:
         return True
 
 
-def _fmt_rate(kb_s: float) -> str:
-    return f'{kb_s / 1024:.1f} MB/s' if kb_s >= 1024 else f'{kb_s:.0f} KB/s'
+from core.performance_monitor import fmt_rate as _fmt_rate      # noqa: E402
 
 
 # ── the grid ─────────────────────────────────────────────────────────────────
@@ -538,7 +537,10 @@ class NetworkWidget(DesktopWidget):
         p.setBrush(c['track'])
         p.drawRoundedRect(g, 8, 8)
         peak = max(16.0, max(max(u, d) for u, d in self._hist))
-        for idx, col in ((1, down_col), (0, up_col)):
+        p.setFont(self._f(9))                       # the scale, so a small blip doesn't look big
+        p.setPen(c['sub'])
+        p.drawText(g.adjusted(0, 3, -7, 0), Qt.AlignTop | Qt.AlignRight, _fmt_rate(peak))
+        for idx, col in ((0, up_col), (1, down_col)):      # download on top
             path = QPainterPath()
             n = len(self._hist)
             for i, sample in enumerate(self._hist):

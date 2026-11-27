@@ -26,6 +26,35 @@ except ImportError:
     _PSUTIL = False
 
 
+# Interfaces whose bytes aren't traffic to the outside world, or are the same bytes counted a
+# second time: loopback (programs on this computer talking to each other, e.g. ST-VPN's Tor
+# proxy), VPN tunnels (their traffic also crosses Wi-Fi / Ethernet), virtual-machine and
+# container switches, AirDrop / hotspot links.
+_MAC_REAL = re.compile(r'^(en|pdp_ip)\d+$')
+_SKIP = re.compile(
+    r'loopback|pseudo-interface|^lo\d*$|^(utun|ipsec|ppp|tun|tap|gif|stf|awdl|llw|ap|anpi|bridge|'
+    r'vmnet|docker|virbr|wg|zt|tailscale|nordlynx)\d*$|^veth|^br-|vethernet|virtualbox|vmware|'
+    r'hyper-v|teredo|isatap|6to4|wintun|wireguard|openvpn|tap-windows|vpn|npcap|'
+    r'local area connection\*|bluetooth',
+    re.IGNORECASE)
+
+
+def counts_as_network(name: str) -> bool:
+    """Whether an interface's bytes count as the computer's internet / network traffic."""
+    if IS_MAC:
+        return bool(_MAC_REAL.match(name))
+    return not _SKIP.search(name)
+
+
+def fmt_rate(kb_s: float) -> str:
+    """KB/s → '0 KB/s', '0.4 KB/s', '37 KB/s', '2.3 MB/s'."""
+    if kb_s >= 1024:
+        return f'{kb_s / 1024:.1f} MB/s'
+    if 0.05 <= kb_s < 10:
+        return f'{kb_s:.1f} KB/s'
+    return f'{kb_s:.0f} KB/s'
+
+
 class PerformanceMonitor:
     @property
     def available(self) -> bool:
@@ -127,27 +156,28 @@ class PerformanceMonitor:
     # ── Network ───────────────────────────────────────────────────────────────
 
     def network(self) -> Tuple[float, float]:
-        """(KB/s sent, KB/s received) since last call."""
+        """(KB/s sent, KB/s received) since last call, over the real network connections
+        only (see counts_as_network). Each interface is compared with itself, so one that
+        appears, disappears or resets (VPN on/off, Wi-Fi reconnect) can't make a fake spike."""
         if not _PSUTIL:
             return 0.0, 0.0
-        if not hasattr(self, "_net_t"):
-            c = _ps.net_io_counters()
-            self._net_t = time.time()
-            self._net_s = c.bytes_sent
-            self._net_r = c.bytes_recv
-            return 0.0, 0.0
         try:
-            c = _ps.net_io_counters()
-            now = time.time()
-            dt = now - self._net_t or 1
-            ks = (c.bytes_sent - self._net_s) / dt / 1024
-            kr = (c.bytes_recv - self._net_r) / dt / 1024
-            self._net_t = now
-            self._net_s = c.bytes_sent
-            self._net_r = c.bytes_recv
-            return max(0, ks), max(0, kr)
+            nics = {n: (c.bytes_sent, c.bytes_recv)
+                    for n, c in _ps.net_io_counters(pernic=True).items() if counts_as_network(n)}
         except Exception:
             return 0.0, 0.0
+        now = time.monotonic()
+        prev, then = getattr(self, "_net_prev", None), getattr(self, "_net_t", None)
+        self._net_prev, self._net_t = nics, now
+        if prev is None or then is None:
+            return 0.0, 0.0
+        dt = max(1e-3, now - then)
+        sent = recv = 0
+        for n, (s, r) in nics.items():
+            if n in prev:
+                sent += max(0, s - prev[n][0])
+                recv += max(0, r - prev[n][1])
+        return sent / dt / 1024, recv / dt / 1024
 
     # ── GPU ───────────────────────────────────────────────────────────────────
     # Probed once: _nvidia_smi = True/False/None(=not yet checked)
