@@ -28,7 +28,8 @@ echo "Tor Expert Bundle $ver (windows-x86_64)"
 curl -fsSL -o "$tmp/$file"     "$base/$ver/$file"
 curl -fsSL -o "$tmp/$file.asc" "$base/$ver/$file.asc"
 
-export GNUPGHOME="$tmp/gnupg"; mkdir -m 700 "$GNUPGHOME"
+export GNUPGHOME="$tmp/gnupg"; mkdir -p "$GNUPGHOME"
+chmod 700 "$GNUPGHOME" 2>/dev/null || true   # Windows file systems may refuse; gpg copes
 gpg --batch --quiet --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org \
   || gpg --batch --quiet --keyserver hkps://keys.openpgp.org --recv-keys "$KEY_FPR"
 gpg --batch --status-fd 1 --verify "$tmp/$file.asc" "$tmp/$file" > "$tmp/status" 2>/dev/null || true
