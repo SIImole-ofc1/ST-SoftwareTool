@@ -145,8 +145,8 @@ class ShellRunner(QObject):
         p.setProcessEnvironment(self._environment())
         p.setWorkingDirectory(self.cwd if os.path.isdir(self.cwd) else os.path.expanduser('~'))
         if IS_WINDOWS:
+            # Qt starts it without a console window, since this GUI app has no console
             prog, args = self._windows_command(command)
-            p.setCreateProcessArgumentsModifier(self._no_window)
         else:
             prog, args = self._unix_shell(), ['-l', '-c', self._unix_script(command)]
         p.readyReadStandardOutput.connect(lambda: self._read('out'))
@@ -156,10 +156,6 @@ class ShellRunner(QObject):
         self._proc = p
         p.start(prog, args)
         return True
-
-    @staticmethod
-    def _no_window(args) -> None:
-        args.flags |= NO_WINDOW
 
     def _unix_script(self, command: str) -> str:
         # sudo asks for the password through SUDO_ASKPASS (a dialog), not the missing TTY

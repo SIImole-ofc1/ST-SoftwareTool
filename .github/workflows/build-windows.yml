@@ -150,10 +150,13 @@ jobs:
         run: |
           $dir = Join-Path $env:ProgramFiles 'ST-SoftwareTool'
           $data = Join-Path $env:APPDATA 'ST-SoftwareTool'
-          $env:ST_SMOKE_TEST = '8'; $env:ST_SMOKE_SHELL = '1'; $env:ST_SMOKE_UNINSTALL = '1'
+          $env:ST_SMOKE_TEST = '15'; $env:ST_SMOKE_SHELL = '1'; $env:ST_SMOKE_UNINSTALL = '1'
+          $env:ST_SMOKE_LOG = "$env:RUNNER_TEMP\delete-test.log"
           $app = Start-Process (Join-Path $dir 'ST.exe') -PassThru
           if (-not $app.WaitForExit(300000)) { $app.Kill(); throw "Delete test timed out" }
           Write-Host "App exit code: $($app.ExitCode)"
+          if (Test-Path $env:ST_SMOKE_LOG) { Get-Content $env:ST_SMOKE_LOG | Where-Object { $_ -match 'SMOKE|Error|Traceback|line' } }
+          Select-String -Path $env:ST_SMOKE_LOG -Pattern 'SMOKE shell=.* ok=True' -Quiet | Out-Null
           if ($app.ExitCode -ne 0) { throw "Shell check or delete failed (exit $($app.ExitCode))" }
           # The uninstaller runs on after the app quits
           for ($i = 0; $i -lt 90 -and (Test-Path (Join-Path $dir 'ST.exe')); $i++) { Start-Sleep 2 }

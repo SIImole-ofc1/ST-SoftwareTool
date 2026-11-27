@@ -68,6 +68,31 @@ def _smoke_test(app, window, seconds: float) -> None:
     Used by the build pipeline to prove the packaged app really starts on each OS."""
     import traceback
     errors = []
+    # ST_SMOKE_LOG=<file>: also write the SMOKE lines there (a Windows GUI app has no stdout)
+    log_path = os.environ.get("ST_SMOKE_LOG")
+    if log_path:
+        class _Tee:
+            def __init__(self, stream):
+                self._stream = stream
+            def write(self, text):
+                try:
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(text)
+                except OSError:
+                    pass
+                if self._stream is not None:
+                    try:
+                        self._stream.write(text)
+                    except Exception:
+                        pass
+            def flush(self):
+                if self._stream is not None:
+                    try:
+                        self._stream.flush()
+                    except Exception:
+                        pass
+        sys.stdout = _Tee(sys.stdout)
+        sys.stderr = _Tee(sys.stderr)
 
     def hook(etype, value, tb):
         errors.append(''.join(traceback.format_exception(etype, value, tb)))
@@ -328,7 +353,9 @@ def _smoke_test(app, window, seconds: float) -> None:
         QTimer.singleShot(1000, lambda: window._set_perf_widget(True))
         QTimer.singleShot(4000, check_widget)
         QTimer.singleShot(7000, check_popup)
-        QTimer.singleShot(9000, check_background)
+        # well after the popup closes: a re-activation within 1 s of that is (on purpose)
+        # treated as coming from the popup, not as "open the app again"
+        QTimer.singleShot(10500, check_background)
 
     QTimer.singleShot(1500, visit_tabs)
     if shots_dir:
