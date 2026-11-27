@@ -1,0 +1,49 @@
+name: Attach tested build to a release
+
+# Copies the macOS .dmg files a finished "Build macOS app" run produced (and tested) to a
+# release, on GitHub's side — no download to anyone's computer. For when a release's own
+# build failed for a reason unrelated to the app and a later run built the same code.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'ID of the successful "Build macOS app (.dmg)" run'
+        required: true
+      tag:
+        description: 'Release tag, e.g. v1.3.29'
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check the inputs and the run
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::run_id must be a number"; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+){1,3}$ ]] || { echo "::error::tag must look like v1.3.29"; exit 1; }
+          info=$(gh run view "$RUN_ID" -R "$GITHUB_REPOSITORY" --json workflowName,conclusion --jq '"\(.workflowName)|\(.conclusion)"')
+          echo "run: $info"
+          [ "$info" = "Build macOS app (.dmg)|success" ] || { echo "::error::not a successful macOS build"; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: ST-SoftwareTool-macOS-*.dmg
+          path: dmg
+          merge-multiple: true
+
+      - name: Attach to the release
+        run: |
+          ls -la dmg
+          gh release upload "$TAG" dmg/ST-SoftwareTool-macOS-arm64.dmg dmg/ST-SoftwareTool-macOS-x86_64.dmg \
+            -R "$GITHUB_REPOSITORY" --clobber
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
