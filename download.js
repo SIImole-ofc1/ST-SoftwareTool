@@ -55,6 +55,20 @@
         // ── special icon gift: the unlock code for Settings › App Icon › Special ──
         // Shown after the download toast and kept until "Collect" is pressed.
         const SPECIAL_CODE = 'SIImole';
+        const GIFT_FROM = [1, 2, 29];     // first app version with the Special icon
+        // Only for a Mac download of an app version that has the Special icon (Settings ›
+        // App Icon is macOS-only; while a new release's files are still being built, the
+        // buttons fall back to the previous version, which doesn't have it yet).
+        const giftFor = link => {
+            const m = (link.href || '').match(/\/releases\/download\/v(\d+(?:\.\d+)*)\/([^/?#]+)$/);
+            if (!m || !m[2].endsWith('.dmg')) return false;
+            const v = m[1].split('.').map(Number);
+            for (let i = 0; i < GIFT_FROM.length; i++) {
+                const a = v[i] || 0, b = GIFT_FROM[i];
+                if (a !== b) return a > b;
+            }
+            return true;
+        };
         const showGift = () => window.SwipeToast?.show({
             title: 'Special Icon collected!',
             description: `Type this code inside ST settings to claim gift!  Code: ${SPECIAL_CODE}`,
@@ -106,7 +120,7 @@
                 duration: 2000,
                 fuse: 'bottom',
                 pauseOnHover: true,
-                onClose: showGift
+                onClose: giftFor(link) ? showGift : null
             });
             const box = link.closest('.download-box');
             const thanks = box && box.querySelector('.download-thanks');
