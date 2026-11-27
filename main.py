@@ -399,11 +399,18 @@ def _smoke_test(app, window, seconds: float) -> None:
 
     if os.environ.get("ST_SMOKE_WIDGET") and sys.platform == "darwin":
         QTimer.singleShot(1000, lambda: window._set_perf_widget(True))
-        QTimer.singleShot(4000, check_widget)
-        QTimer.singleShot(7000, check_popup)
-        # well after the popup closes: a re-activation within 1 s of that is (on purpose)
-        # treated as coming from the popup, not as "open the app again"
-        QTimer.singleShot(10500, check_background)
+        # One after another, not on fixed times: on a slow machine (a blocked main thread)
+        # late timers would otherwise fire inside the widget test and hide the window.
+        def popup_then_background():
+            check_popup()
+            # well after the popup closes: a re-activation within 1 s of that is (on purpose)
+            # treated as coming from the popup, not as "open the app again"
+            QTimer.singleShot(3500, check_background)
+
+        def widget_then_popup():
+            check_widget()
+            QTimer.singleShot(3000, popup_then_background)
+        QTimer.singleShot(4000, widget_then_popup)
 
     QTimer.singleShot(1500, visit_tabs)
     if shots_dir:
