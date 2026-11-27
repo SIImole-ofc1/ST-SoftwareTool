@@ -52,6 +52,41 @@
         });
         show(isMac ? 'macos' : 'windows', false);
 
+        // ── special icon gift: the unlock code for Settings › App Icon › Special ──
+        // Shown after the download toast and kept until "Collect" is pressed.
+        const SPECIAL_CODE = 'SIImole';
+        const showGift = () => window.SwipeToast?.show({
+            title: 'Special Icon collected!',
+            description: `Type this code inside ST settings to claim gift!  Code: ${SPECIAL_CODE}`,
+            actionLabel: 'Collect',
+            onAction: () => navigator.clipboard?.writeText(SPECIAL_CODE).catch(() => {}),
+            onClose: why => {
+                if (why !== 'action') return;
+                window.SwipeToast?.show({       // once the gift card has gone
+                    title: `Code ${SPECIAL_CODE} copied`,
+                    description: 'In ST-SoftwareTool: Settings › App Icon › Special › Unlock…',
+                    background: '#27272a',
+                    color: '#f5f5f5',
+                    fuseColor: '#3b82f6',
+                    radius: 19,
+                    duration: 5000,
+                    fuse: 'top'
+                });
+            },
+            background: '#27272a',
+            color: '#f5f5f5',
+            fuseColor: '#3b82f6',
+            width: 356,
+            radius: 19,
+            slideMs: 700,
+            settleBounce: 0.2,
+            swipeDistance: 40,
+            duration: 0,              // stays until Collect is pressed
+            fuse: 'top',
+            pauseOnHover: true,
+            dismissible: false
+        });
+
         // ── typed thank-you after a download button is pressed ────────────────
         section.addEventListener('click', event => {
             const link = event.target.closest('a[data-download]');
@@ -70,7 +105,8 @@
                 swipeDistance: 40,
                 duration: 2000,
                 fuse: 'bottom',
-                pauseOnHover: true
+                pauseOnHover: true,
+                onClose: showGift
             });
             const box = link.closest('.download-box');
             const thanks = box && box.querySelector('.download-thanks');

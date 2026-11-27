@@ -1155,8 +1155,29 @@ class GUIView(QWidget):
                     row.addWidget(preview)
                 row.addStretch()
                 il.addLayout(row)
-            {"light": self.rb_icon_light, "dark": self.rb_icon_dark}.get(
+            # Special: locked until the code from the website's Download button is typed
+            self.rb_icon_special = QRadioButton("Special")
+            bg_icon.addButton(self.rb_icon_special)
+            special_row = QHBoxLayout()
+            special_row.setSpacing(8)
+            special_row.addWidget(self.rb_icon_special)
+            self._special_preview = QLabel()
+            special_row.addWidget(self._special_preview)
+            self._special_unlock_btn = QPushButton("Unlock…")
+            self._special_unlock_btn.setToolTip(
+                "Type the special code. You get it when you press Download on "
+                "st-softwaretool.pages.dev.")
+            self._special_unlock_btn.clicked.connect(self._unlock_special_icon)
+            special_row.addWidget(self._special_unlock_btn)
+            special_row.addStretch()
+            il.addLayout(special_row)
+            self._refresh_special_icon_row()
+
+            {"light": self.rb_icon_light, "dark": self.rb_icon_dark,
+             "special": self.rb_icon_special}.get(
                 self.manager.settings.get("app_icon", "auto"), self.rb_icon_auto).setChecked(True)
+            if self.rb_icon_special.isChecked() and not self.rb_icon_special.isEnabled():
+                self.rb_icon_auto.setChecked(True)
             hint = QLabel("Shown in the Dock, Finder and Launchpad.")
             hint.setStyleSheet("font-size: 10px; color: #888888;")
             il.addWidget(hint)
@@ -1389,6 +1410,46 @@ class GUIView(QWidget):
         }.get(theme)
         if rb is not None and not rb.isChecked():
             rb.setChecked(True)
+
+    def _refresh_special_icon_row(self):
+        from ui.app_icon import ICONS, special_unlocked
+        unlocked = special_unlocked(self.manager.settings)
+        self.rb_icon_special.setEnabled(unlocked)
+        self._special_unlock_btn.setVisible(not unlocked)
+        if unlocked:
+            self.rb_icon_special.setText("Special")
+            self._special_preview.setPixmap(QIcon(ICONS["special"]).pixmap(28, 28))
+            self._special_preview.setToolTip("")
+        else:
+            self.rb_icon_special.setText("Special  🔒")
+            self._special_preview.setText("Locked — get the code from the Download button "
+                                          "on the website")
+            self._special_preview.setStyleSheet("font-size: 10px;")
+            self._special_preview.setEnabled(False)
+
+    def _unlock_special_icon(self):
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+        from ui.app_icon import unlock
+        code, ok = QInputDialog.getText(
+            self, "Unlock the special icon",
+            "Type your special code (you get it when you press Download\n"
+            "on st-softwaretool.pages.dev):", QLineEdit.Normal, "")
+        if not ok or not code.strip():
+            return
+        if not unlock(self.manager.settings, code):
+            QMessageBox.warning(self, "Unlock the special icon",
+                                "That code isn't right. Check it and try again.")
+            return
+        self._special_preview.setEnabled(True)
+        self._special_preview.setStyleSheet("")
+        self._refresh_special_icon_row()
+        self.rb_icon_special.setChecked(True)
+        self.manager.settings["app_icon"] = "special"
+        self._save_settings_quietly()
+        self.settings_changed.emit()          # shows the special icon right away
+        QMessageBox.information(self, "Special icon unlocked",
+                                "🎉  Gift claimed! The special icon is now your app icon.\n"
+                                "You can switch icons any time in Settings › App Icon.")
 
     def _homebrew_box(self) -> QGroupBox:
         box = QGroupBox("Homebrew")
@@ -1693,7 +1754,8 @@ class GUIView(QWidget):
         if IS_MAC:
             self.manager.settings["app_icon"] = (
                 "light" if self.rb_icon_light.isChecked() else
-                "dark" if self.rb_icon_dark.isChecked() else "auto")
+                "dark" if self.rb_icon_dark.isChecked() else
+                "special" if self.rb_icon_special.isChecked() else "auto")
 
         # Protection & Privacy settings
         self.manager.settings['run_in_background']  = self.chk_run_background.isChecked()
