@@ -1,17 +1,24 @@
 """Now playing, playback controls and volume for the Music & Audio desktop widget (macOS).
 
-Apple Music and Spotify are asked over AppleScript — only when they are already running, so
-the widget never launches a player. macOS asks once for permission to control each app.
-Players without a Mac app (SoundCloud, YouTube … in a browser) can't be read by other apps on
-current macOS, but they react to the media keys, which the widget's buttons then send.
+Main source: macOS's own Now Playing — the same one Control Center shows — so it covers every
+player: Apple Music, Spotify, YouTube / SoundCloud / … in Safari, Chrome or Firefox, VLC and
+so on, with the cover, and the buttons control that player directly (no permission needed).
+Since macOS 15.4 only Apple-signed programs may use it, so our small helper library
+(packaging/macos/nowplaying) is loaded into the system's /usr/bin/perl.
+
+Fallback when the helper isn't there: Apple Music and Spotify over AppleScript (only when
+already running, so the widget never launches a player), and the media keys.
 """
 from __future__ import annotations
 
 import ctypes
 import hashlib
+import json
 import os
 import subprocess
+import sys
 import tempfile
+import time
 import urllib.request
 from typing import Optional
 
@@ -20,6 +27,69 @@ from core.osinfo import IS_MAC
 PLAYERS = (('Music', 'Apple Music'), ('Spotify', 'Spotify'))
 _ART_DIR = os.path.join(tempfile.gettempdir(), 'st-nowplaying')
 _SEP = '\x1f'
+
+
+# ── macOS Now Playing (through the helper) ───────────────────────────────────
+
+_HELPER_NAME = 'st_nowplaying.dylib'
+_PERL_LOADER = ('use DynaLoader; my $l = DynaLoader::dl_load_file($ARGV[0], 0) or die; '
+                'my $s = DynaLoader::dl_find_symbol($l, "st_nowplaying") or die; '
+                'DynaLoader::dl_install_xsub("main::st_np", $s); main::st_np();')
+_BROWSERS = {'org.mozilla.firefox', 'com.google.Chrome', 'com.apple.Safari', 'com.microsoft.edgemac',
+             'com.brave.Browser', 'company.thebrowser.Browser', 'com.operasoftware.Opera',
+             'com.vivaldi.Vivaldi', 'org.chromium.Chromium', 'app.zen-browser.zen'}
+
+
+def helper_path() -> Optional[str]:
+    """The Now Playing helper: in the app (Contents/MacOS/tools), or build/tools in a checkout."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (os.path.join(os.path.dirname(os.path.abspath(sys.executable)), 'tools', _HELPER_NAME),
+                 os.path.join(here, '..', 'tools', _HELPER_NAME),
+                 os.path.join(here, '..', 'build', 'tools', _HELPER_NAME)):
+        if os.path.isfile(path):
+            return os.path.normpath(path)
+    return None
+
+
+def _helper(cmd: str, timeout: float = 5.0) -> Optional[dict]:
+    """Run the helper once: 'get', or a command. None when it can't run."""
+    path = helper_path()
+    if not IS_MAC or not path or not os.path.exists('/usr/bin/perl'):
+        return None
+    os.makedirs(_ART_DIR, exist_ok=True)
+    env = dict(os.environ, ST_NP_CMD=cmd, ST_NP_ART_DIR=_ART_DIR)
+    env.pop('PERL5LIB', None)
+    env.pop('PERL5OPT', None)
+    try:
+        r = subprocess.run(['/usr/bin/perl', '-e', _PERL_LOADER, path], capture_output=True,
+                           text=True, timeout=timeout, env=env)
+        line = (r.stdout or '').strip().splitlines()
+        data = json.loads(line[-1]) if line else None
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and 'error' not in data else None
+
+
+def _from_system(d: dict) -> dict:
+    """The helper's answer → the widget's now-playing dict."""
+    if d.get('state') == 'none' or not (d.get('title') or d.get('artist')):
+        return {'state': 'none'}
+    rate = d.get('rate') or 0
+    playing = d.get('playing') if d.get('playing') is not None else rate > 0
+    position = float(d.get('elapsed') or 0)
+    if playing and d.get('timestamp'):            # elapsed is "as of timestamp"
+        position += max(0.0, time.time() - float(d['timestamp'])) * (rate or 1)
+    duration = float(d.get('duration') or 0)
+    if duration:
+        position = min(position, duration)
+    app = d.get('app') or 'Now Playing'
+    label = {'Music': 'Apple Music'}.get(app, app)
+    if d.get('bundle') in _BROWSERS:
+        label = f'{app} · browser'
+    return {'app': app, 'bundle': d.get('bundle', ''), 'label': label, 'source': 'system',
+            'state': 'playing' if playing else 'paused', 'title': d.get('title') or '',
+            'artist': d.get('artist') or '', 'album': d.get('album') or '',
+            'duration': duration, 'position': position, 'artwork': d.get('artwork')}
 
 
 def _osa(script: str, timeout: float = 4.0) -> tuple:
@@ -95,6 +165,9 @@ def now_playing() -> dict:
     or {state: 'none'} / {state: 'denied', app} when macOS hasn't allowed control yet."""
     if not IS_MAC:
         return {'state': 'none'}
+    system = _helper('get')
+    if system is not None:
+        return _from_system(system)
     found = []
     for app in running_players():
         try:
@@ -127,6 +200,9 @@ def control(action: str, app: Optional[str] = None) -> bool:
     """action: playpause / next / previous. Goes to the app, or to the media keys."""
     if not IS_MAC:
         return False
+    sent = _helper(action)
+    if sent is not None and sent.get('ok'):
+        return True
     if app in dict(PLAYERS) and app in running_players():
         verb = {'playpause': 'playpause', 'next': 'next track', 'previous': 'previous track'}[action]
         try:

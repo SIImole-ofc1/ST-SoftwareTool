@@ -298,6 +298,15 @@ def _smoke_test(app, window, seconds: float) -> None:
                 errors.append(f"Desktop widget '{kind}' did not open")
             elif shots_dir:
                 other.grab().save(os.path.join(shots_dir, f"widget-{kind}.png"))
+        # Music & Audio reads macOS's Now Playing through the helper the app ships
+        from core import media
+        helper = media.helper_path()
+        answer = media._helper('get') if helper else None
+        print(f"SMOKE nowplaying helper={helper!r} answers={answer is not None} "
+              f"now_playing={media.now_playing().get('state')}", flush=True)
+        if getattr(sys, 'frozen', False) or '__compiled__' in globals():
+            if not helper:
+                errors.append("Now Playing helper missing from the app")
         if level is None or level != expected:
             errors.append(f"Desktop widget not at desktop level ({level} != {expected})")
         if not shots_dir:

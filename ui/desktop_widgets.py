@@ -626,8 +626,8 @@ class MusicWidget(DesktopWidget):
             title, artist = 'Allow control', f"System Settings › Privacy › Automation › {np.get('label')}"
             source = 'macOS asked for permission'
         else:
-            title, artist = 'Not Playing', 'Apple Music · Spotify · or any player'
-            source = 'Buttons work as media keys'
+            title, artist = 'Not Playing', 'Apple Music · Spotify · YouTube · SoundCloud …'
+            source = 'Music & Audio'
         fm_t = self._f(12.5, QFont.Bold)
         p.setFont(self._f(9.5, QFont.DemiBold))
         p.setPen(c['accent'])

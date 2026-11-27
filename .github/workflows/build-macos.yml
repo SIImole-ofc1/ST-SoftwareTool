@@ -139,6 +139,20 @@ jobs:
           cp -R build/tor_bundle build/ST-SoftwareTool.app/Contents/MacOS/core/tor_bundle
           ls -la build/ST-SoftwareTool.app/Contents/MacOS | head -20
 
+      - name: Now Playing helper (Music & Audio widget)
+        # core/media.py loads it into /usr/bin/perl to read and control macOS's Now Playing
+        run: |
+          bash packaging/macos/nowplaying/build.sh build/tools/st_nowplaying.dylib
+          mkdir -p build/ST-SoftwareTool.app/Contents/MacOS/tools
+          cp build/tools/st_nowplaying.dylib build/ST-SoftwareTool.app/Contents/MacOS/tools/
+          lipo -archs build/ST-SoftwareTool.app/Contents/MacOS/tools/st_nowplaying.dylib
+          # it must load and answer with one line of JSON (nothing plays on the build machine)
+          out=$(ST_NP_CMD=get /usr/bin/perl -e 'use DynaLoader; my $l = DynaLoader::dl_load_file($ARGV[0], 0) or die; my $s = DynaLoader::dl_find_symbol($l, "st_nowplaying") or die; DynaLoader::dl_install_xsub("main::st_np", $s); main::st_np();' build/ST-SoftwareTool.app/Contents/MacOS/tools/st_nowplaying.dylib)
+          echo "helper says: $out"
+          echo "$out" | python -c 'import json, sys; json.loads(sys.stdin.read().strip().splitlines()[-1])' \
+            || echo "::warning::Now Playing helper gave no JSON on this build machine"
+          test -n "$out" 
+
       - name: Set minimum macOS version
         # Read the newest "minimum macOS" any bundled binary was built for and declare it
         # in Info.plist, so older Macs get Apple's clear "requires macOS X" message
