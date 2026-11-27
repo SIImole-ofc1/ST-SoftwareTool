@@ -273,6 +273,8 @@ class GUIView(QWidget):
     widget_glass_changed = Signal()          # desktop widget gloss / blur slider moved
     uninstall_requested = Signal()           # Settings › Delete ST-SoftwareTool (confirmed)
     files_open_terminal = Signal(str)        # File Manager › Open in ST Terminal (a folder)
+    widgets_changed     = Signal()           # Settings › Widgets & Menu Bar changed
+    speed_test_done     = Signal(dict)       # Device Manager › Speed Test finished
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -347,7 +349,7 @@ class GUIView(QWidget):
                     w.wake_now()
                 w.wait(5000)
         for view in (self._svc_view, self._startup_view, self._antivirus_view, self._vpn_view,
-                     self._files_view):
+                     self._files_view, getattr(self, '_speed_view', None)):
             if view is not None:
                 view.cleanup()
 
@@ -504,6 +506,10 @@ class GUIView(QWidget):
         self._device_inner = QTabWidget()
         self._device_inner.addTab(self._sub_devices(),     "Devices")
         self._device_inner.addTab(self._sub_performance(), "Performance")
+        from ui.speedtest_view import SpeedTestView
+        self._speed_view = SpeedTestView(self.manager)
+        self._speed_view.result_ready.connect(self.speed_test_done.emit)
+        self._device_inner.addTab(self._speed_view, "Speed Test")
         ol.addWidget(self._device_inner)
         return outer
 
@@ -1198,6 +1204,11 @@ class GUIView(QWidget):
         # ── Glass look (macOS Glass theme) ────────────────────────────────────
         layout.addWidget(self._glass_settings_box())
 
+        # ── Widgets & Menu Bar (macOS) ────────────────────────────────────────
+        if IS_MAC:
+            self._widgets_group = self._widgets_box()
+            layout.addWidget(self._widgets_group)
+
         # ── Homebrew (macOS) ──────────────────────────────────────────────────
         if IS_MAC:
             layout.addWidget(self._homebrew_box())
@@ -1463,6 +1474,136 @@ class GUIView(QWidget):
         QMessageBox.information(self, "Special icon unlocked",
                                 "🎉  Gift claimed! The special icon is now your app icon.\n"
                                 "You can switch icons any time in Settings › App Icon.")
+
+    # ── Settings › Widgets & Menu Bar ─────────────────────────────────────────
+
+    POPUP_SECTIONS = (('bars', 'Usage bars (CPU, RAM, GPU, SSD)'), ('netline', 'Network speed line'),
+                      ('cores', 'CPU cores & load'), ('memory', 'Memory'), ('disk', 'Disk'),
+                      ('network', 'Network addresses'), ('battery', 'Battery'),
+                      ('top', 'Busiest apps'), ('system', 'macOS version & uptime'),
+                      ('vpn', 'VPN'), ('widgets', 'Widget switch'))
+
+    def _widgets_box(self) -> QGroupBox:
+        from ui.desktop_widgets import KINDS, TITLES
+        s = self.manager.settings
+        box = QGroupBox("Widgets && Menu Bar")
+        v = QVBoxLayout(box)
+        v.setSpacing(6)
+
+        def heading(text):
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-weight: 600;")
+            v.addWidget(lbl)
+
+        def flow(checks):
+            row = QHBoxLayout()
+            for c in checks:
+                row.addWidget(c)
+            row.addStretch()
+            v.addLayout(row)
+
+        def changed(fn):
+            def handler(*_):
+                fn()
+                self._save_settings_quietly()
+                self.widgets_changed.emit()
+            return handler
+
+        heading("Desktop widgets  —  on your desktop, on Apple's widget grid")
+        self._widget_checks = {}
+        on = s.get('widgets_on') or {}
+        for kind in KINDS:
+            c = QCheckBox(TITLES[kind])
+            c.setChecked(bool(s.get('perf_widget', False)) if kind == 'performance' else bool(on.get(kind)))
+            c.toggled.connect(changed(lambda k=kind, c=c: self._store_widget_on(k, c.isChecked())))
+            self._widget_checks[kind] = c
+        flow(self._widget_checks.values())
+        self.chk_widget_snap = QCheckBox("Snap widgets to the desktop grid, like Apple's widgets")
+        self.chk_widget_snap.setChecked(bool(s.get('widget_snap', True)))
+        self.chk_widget_snap.toggled.connect(changed(lambda: s.__setitem__('widget_snap', self.chk_widget_snap.isChecked())))
+        v.addWidget(self.chk_widget_snap)
+
+        heading("Performance widget shows")
+        rows = s.get('widget_perf_rows', ['cpu', 'ram', 'gpu', 'ssd'])
+        self._perf_row_checks = {}
+        for key, label in (('cpu', 'CPU'), ('ram', 'RAM'), ('gpu', 'GPU'), ('ssd', 'SSD')):
+            c = QCheckBox(label)
+            c.setChecked(key in rows)
+            c.toggled.connect(changed(self._store_perf_rows))
+            self._perf_row_checks[key] = c
+        self.chk_widget_net = QCheckBox("Network speed")
+        self.chk_widget_net.setChecked(bool(s.get('widget_perf_net', True)))
+        self.chk_widget_net.toggled.connect(changed(lambda: s.__setitem__('widget_perf_net', self.chk_widget_net.isChecked())))
+        flow(list(self._perf_row_checks.values()) + [self.chk_widget_net])
+
+        heading("Clock widget")
+        self.rb_clock_digital = QRadioButton("Digital")
+        self.rb_clock_analog = QRadioButton("Analog")
+        bg = QButtonGroup(box)
+        for rb in (self.rb_clock_digital, self.rb_clock_analog):
+            bg.addButton(rb)
+        (self.rb_clock_analog if s.get('widget_clock_style') == 'analog' else self.rb_clock_digital).setChecked(True)
+        self.rb_clock_analog.toggled.connect(changed(lambda: s.__setitem__(
+            'widget_clock_style', 'analog' if self.rb_clock_analog.isChecked() else 'digital')))
+        self.chk_clock_seconds = QCheckBox("Seconds")
+        self.chk_clock_seconds.setChecked(bool(s.get('widget_clock_seconds', False)))
+        self.chk_clock_seconds.toggled.connect(changed(lambda: s.__setitem__('widget_clock_seconds', self.chk_clock_seconds.isChecked())))
+        self.chk_clock_24h = QCheckBox("24-hour")
+        self.chk_clock_24h.setChecked(bool(s.get('widget_clock_24h', True)))
+        self.chk_clock_24h.toggled.connect(changed(lambda: s.__setitem__('widget_clock_24h', self.chk_clock_24h.isChecked())))
+        flow([self.rb_clock_digital, self.rb_clock_analog, self.chk_clock_seconds, self.chk_clock_24h])
+
+        heading("Menu-bar popup shows")
+        shown = s.get('popup_sections') or [k for k, _ in self.POPUP_SECTIONS]
+        self._popup_checks = {}
+        grid = QGridLayout()
+        for i, (key, label) in enumerate(self.POPUP_SECTIONS):
+            c = QCheckBox(label)
+            c.setChecked(key in shown)
+            c.toggled.connect(changed(self._store_popup_sections))
+            self._popup_checks[key] = c
+            grid.addWidget(c, i // 3, i % 3)
+        v.addLayout(grid)
+        hint = QLabel("Music & Audio works with Apple Music and Spotify (macOS asks once to let "
+                      "ST-SoftwareTool control them). For players in a browser, like SoundCloud, "
+                      "its buttons act as media keys.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size: 10px;")
+        v.addWidget(hint)
+        return box
+
+    def _store_widget_on(self, kind: str, on: bool):
+        if kind == 'performance':
+            self.manager.settings['perf_widget'] = on
+        else:
+            self.manager.settings.setdefault('widgets_on', {})[kind] = on
+
+    def _store_perf_rows(self):
+        self.manager.settings['widget_perf_rows'] = [k for k, c in self._perf_row_checks.items()
+                                                     if c.isChecked()]
+
+    def _store_popup_sections(self):
+        self.manager.settings['popup_sections'] = [k for k, c in self._popup_checks.items()
+                                                   if c.isChecked()]
+
+    def set_widget_checked(self, kind: str, on: bool):
+        """Keep Settings in step when a widget is added / removed elsewhere."""
+        c = getattr(self, '_widget_checks', {}).get(kind)
+        if c is not None and c.isChecked() != on:
+            c.blockSignals(True)
+            c.setChecked(on)
+            c.blockSignals(False)
+
+    def show_widget_settings(self):
+        """Open Settings scrolled to Widgets & Menu Bar."""
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Settings":
+                self.tabs.setCurrentIndex(i)
+                scroll = self.tabs.widget(i)
+                box = getattr(self, '_widgets_group', None)
+                if box is not None and hasattr(scroll, 'ensureWidgetVisible'):
+                    QTimer.singleShot(50, lambda: scroll.ensureWidgetVisible(box, 0, 40))
+                break
 
     def _homebrew_box(self) -> QGroupBox:
         box = QGroupBox("Homebrew")

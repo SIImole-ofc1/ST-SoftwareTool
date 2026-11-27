@@ -259,20 +259,45 @@ def _smoke_test(app, window, seconds: float) -> None:
               f"alpha={w.backdrop.alpha()} gloss={w._gloss} tint={w._tint:.2f}", flush=True)
         if not w.backdrop.is_visible():
             errors.append("Desktop widget: the native blur is not behind it")
-        # A click on the widget opens the app (a drag only moves the widget)
+        # A click on the widget opens the app; a drag moves it and (by default) snaps it onto
+        # Apple's desktop widget grid
         from PySide6.QtTest import QTest
+        from ui.desktop_widgets import CELL, EDGE
         window.hide()
         start = w.pos()
-        QTest.mousePress(w, Qt.LeftButton, Qt.NoModifier, QPoint(60, 60))
-        QTest.mouseMove(w, QPoint(90, 75))
-        QTest.mouseRelease(w, Qt.LeftButton, Qt.NoModifier, QPoint(90, 75))
+
+        def drag(dx, dy):
+            QTest.mousePress(w, Qt.LeftButton, Qt.NoModifier, QPoint(60, 60))
+            QTest.mouseMove(w, QPoint(60 + dx, 60 + dy))
+            QTest.mouseRelease(w, Qt.LeftButton, Qt.NoModifier, QPoint(60 + dx, 60 + dy))
+        w.snap_enabled = False
+        drag(30, 15)
         dragged = w.pos() != start and window.isHidden()
+        w.snap_enabled = True
+        drag(-260, 230)
+        area = w.screen().availableGeometry()
+        x, y = w.x(), w.y()
+        on_grid = (((x - area.left() - EDGE) % CELL == 0 or (area.right() + 1 - EDGE - w.width() - x) % CELL == 0)
+                   and (y - area.top() - EDGE) % CELL == 0)
         w.move(start)
         QTest.mouseClick(w, Qt.LeftButton, Qt.NoModifier, QPoint(60, 60))
         app.processEvents()
-        print(f"SMOKE widget drag_moves={dragged} click_opens={window.isVisible()}", flush=True)
-        if not dragged or not window.isVisible():
-            errors.append("Desktop widget: click should open the app and drag should move it")
+        print(f"SMOKE widget drag_moves={dragged} snaps_to_grid={on_grid} at=({x},{y}) "
+              f"click_opens={window.isVisible()}", flush=True)
+        if not dragged or not on_grid or not window.isVisible():
+            errors.append("Desktop widget: click should open the app, drag should move it and snap it to the grid")
+        # The other widgets draw (and screenshot them)
+        for kind in ('clock', 'network', 'music'):
+            window._set_widget(kind, True)
+            other = window._widgets.get(kind)
+            app.processEvents()
+            ok = other is not None and other.isVisible() and not other.grab().isNull()
+            print(f"SMOKE widget {kind} shown={ok} size={other.width() if other else 0}x"
+                  f"{other.height() if other else 0} pos={other.pos().toTuple() if other else None}", flush=True)
+            if not ok:
+                errors.append(f"Desktop widget '{kind}' did not open")
+            elif shots_dir:
+                other.grab().save(os.path.join(shots_dir, f"widget-{kind}.png"))
         if level is None or level != expected:
             errors.append(f"Desktop widget not at desktop level ({level} != {expected})")
         if not shots_dir:

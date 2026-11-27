@@ -132,7 +132,17 @@ class PerfPanel(QWidget):
         self._disk = _disk_percent()
         self.update()
 
+    show_bars = True        # the menu-bar popup can hide the bars / network line
+    show_net = True
+
+    def set_visible_parts(self, bars: bool, net: bool) -> None:
+        self.show_bars, self.show_net = bool(bars), bool(net)
+        self._fit_height()
+        self.update()
+
     def _rows(self):
+        if not self.show_bars:
+            return []
         rows = [('CPU', self._cpu), ('RAM', self._ram)]
         if self._gpu is not None:
             rows.append(('GPU', self._gpu))
@@ -141,7 +151,8 @@ class PerfPanel(QWidget):
         return rows
 
     def _fit_height(self) -> None:
-        self.setFixedSize(_W, _PAD + _HEADER_H + len(self._rows()) * _ROW_H + _NET_H + _PAD)
+        self.setFixedSize(_W, _PAD + _HEADER_H + len(self._rows()) * _ROW_H
+                          + (_NET_H if self.show_net else 0) + _PAD)
 
     # ── drawing ───────────────────────────────────────────────────────────────
 
@@ -215,10 +226,11 @@ class PerfPanel(QWidget):
             y += _ROW_H
 
         # Network
-        p.setFont(small)
-        p.setPen(sub)
-        p.drawText(QRectF(x, y, right - x, _NET_H), Qt.AlignVCenter | Qt.AlignLeft,
-                   f'↑ {_fmt_rate(self._up)}     ↓ {_fmt_rate(self._down)}')
+        if self.show_net:
+            p.setFont(small)
+            p.setPen(sub)
+            p.drawText(QRectF(x, y, right - x, _NET_H), Qt.AlignVCenter | Qt.AlignLeft,
+                       f'↑ {_fmt_rate(self._up)}     ↓ {_fmt_rate(self._down)}')
         p.end()
 
 

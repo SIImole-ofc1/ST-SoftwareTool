@@ -118,7 +118,7 @@ jobs:
             --macos-signed-app-name="com.stsoftwaretool.app" \
             --macos-app-version="$VERSION" \
             --macos-app-icon=build/ST.icns \
-            --macos-app-protected-resource="NSAppleEventsUsageDescription:ST-SoftwareTool reads and changes your Login Items (Advanced Startup) through System Events." \
+            --macos-app-protected-resource="NSAppleEventsUsageDescription:ST-SoftwareTool reads and changes your Login Items (Advanced Startup), and shows and controls what Apple Music or Spotify is playing in the Music & Audio widget." \
             --macos-app-protected-resource="NSDesktopFolderUsageDescription:ST-SoftwareTool's File Manager shows and manages the files on your Desktop." \
             --macos-app-protected-resource="NSDownloadsFolderUsageDescription:ST-SoftwareTool's File Manager shows and manages your Downloads." \
             --macos-app-protected-resource="NSRemovableVolumesUsageDescription:ST-SoftwareTool's File Manager shows the files on USB drives and memory cards." \

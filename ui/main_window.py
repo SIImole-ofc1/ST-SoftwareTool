@@ -11,6 +11,7 @@ from core import mac_appkit
 from . import glass
 from .terminal_widget import TerminalWidget
 from .gui_view import GUIView
+from .async_call import call_async
 from core.privacy_monitor import PrivacyMonitor
 from core.background_tasks import BackgroundScanner
 from core.updater import APP_VERSION, check_for_update
@@ -46,7 +47,7 @@ class MainWindow(QMainWindow):
         # Instantiate scanner/privacy before building menu (menu references them)
         self._privacy = PrivacyMonitor(self)
         self._scanner = BackgroundScanner(self)
-        self._perf_widget = None   # macOS desktop Performance widget, when shown
+        self._widgets: dict = {}   # macOS desktop widgets that are shown, by kind
 
         self._build_menu()
         self._build_central()
@@ -83,8 +84,8 @@ class MainWindow(QMainWindow):
             self._go_terminal()
 
         # Bring back the desktop widget if it was on when the app last ran
-        if IS_MAC and manager.settings.get('perf_widget', False):
-            QTimer.singleShot(800, lambda: self._set_perf_widget(True))
+        if IS_MAC:
+            QTimer.singleShot(800, self._restore_widgets)
 
         if IS_MAC:
             # Reopening the app (Dock, Launchpad, Finder) shows the window again
@@ -156,6 +157,7 @@ class MainWindow(QMainWindow):
             p.vpn_clicked.connect(self._popup_vpn_clicked)
             self.gui._perf_worker.perf_ready.connect(p.panel.set_perf)
             self.gui._perf_worker.perf_ready.connect(p.details.set_perf)
+            p.apply_sections(self.manager.settings)
             self.gui._gpu_worker.gpu_ready.connect(p.panel.set_gpu)
             self._seed_perf(p.panel)
             self._popup = p
@@ -207,7 +209,7 @@ class MainWindow(QMainWindow):
             return True
         # macOS: like Stats, closing the window leaves the app in the menu bar (and keeps the
         # desktop widget); ⌘Q or Quit in the popup really quits.
-        return IS_MAC and (s.get('menubar_icon', True) or s.get('perf_widget', False))
+        return IS_MAC and (s.get('menubar_icon', True) or self._any_widget_enabled())
 
     def enter_background(self):
         """Hide the window and (macOS) the Dock icon; keep running in the menu bar."""
@@ -244,9 +246,8 @@ class MainWindow(QMainWindow):
             return   # activated by the menu-bar popup
         if QApplication.activePopupWidget() is not None:
             return   # e.g. the widget's right-click menu
-        w = self._perf_widget
-        if w is not None and w.frameGeometry().contains(QCursor.pos()):
-            return   # a click on the desktop widget
+        if any(w.frameGeometry().contains(QCursor.pos()) for w in self._widgets.values()):
+            return   # a click on a desktop widget
         self._tray_open()
 
 
@@ -475,6 +476,8 @@ class MainWindow(QMainWindow):
         self.gui.perf_widget_toggled.connect(self._set_perf_widget)
         self.gui.glass_changed.connect(self._on_glass_changed)
         self.gui.widget_glass_changed.connect(self._apply_widget_glass)
+        self.gui.widgets_changed.connect(self._apply_widget_settings)
+        self.gui.speed_test_done.connect(self._on_speed_test)
         self.gui.uninstall_requested.connect(self.uninstall_app)
         self.gui.files_open_terminal.connect(self._open_terminal_at)
         self.stack.addWidget(self.gui)         # index 1
@@ -921,40 +924,194 @@ class MainWindow(QMainWindow):
             self._do_cleanup()
             event.accept()
 
-    # ── desktop Performance widget (macOS) ───────────────────────────────────
+    # ── desktop widgets (macOS) ──────────────────────────────────────────────
+
+    @property
+    def _perf_widget(self):
+        return self._widgets.get('performance')
+
+    def widget_enabled(self, kind: str) -> bool:
+        s = self.manager.settings
+        if kind == 'performance':
+            return bool(s.get('perf_widget', False))
+        return bool((s.get('widgets_on') or {}).get(kind, False))
 
     def _set_perf_widget(self, on: bool):
         """Show or remove the desktop Performance widget and remember the choice."""
-        on = bool(on)
-        if self.manager.settings.get('perf_widget', False) != on:
-            self.manager.settings['perf_widget'] = on
-            self._save_settings_quietly()
-        if hasattr(self, '_widget_action'):
-            self._widget_action.setChecked(on)
-        self.gui.set_perf_widget_checked(on)
-        if self._popup is not None:
-            self._popup.set_widget_checked(on)
-        if IS_MAC and self.manager.settings.get('start_with_windows', False):
-            # At login, start quietly in the menu bar when the widget is on (no window)
-            GUIView._set_startup_mac(True, background=on)
+        self._set_widget('performance', on)
 
-        if on and self._perf_widget is None:
-            from ui.perf_widget import PerfWidget
-            w = PerfWidget()
-            self.gui._perf_worker.perf_ready.connect(w.set_perf)
-            self.gui._gpu_worker.gpu_ready.connect(w.set_gpu)
+    def _set_widget(self, kind: str, on: bool):
+        """Show or remove one desktop widget and remember the choice."""
+        on = bool(on)
+        s = self.manager.settings
+        if self.widget_enabled(kind) != on:
+            if kind == 'performance':
+                s['perf_widget'] = on
+            else:
+                s.setdefault('widgets_on', {})[kind] = on
+            self._save_settings_quietly()
+        if kind == 'performance':
+            if hasattr(self, '_widget_action'):
+                self._widget_action.setChecked(on)
+            self.gui.set_perf_widget_checked(on)
+            if self._popup is not None:
+                self._popup.set_widget_checked(on)
+        self.gui.set_widget_checked(kind, on)
+        if IS_MAC and s.get('start_with_windows', False):
+            # At login, start quietly in the menu bar when a widget is on (no window)
+            GUIView._set_startup_mac(True, background=self._any_widget_enabled())
+
+        w = self._widgets.get(kind)
+        if on and w is None:
+            from ui.desktop_widgets import WIDGET_CLASSES
+            w = WIDGET_CLASSES[kind]()
             w.open_requested.connect(self._tray_open)
-            w.remove_requested.connect(lambda: self._set_perf_widget(False))
-            w.moved.connect(self._on_perf_widget_moved)
-            self._seed_perf(w)
-            w.place(self.manager.settings.get('perf_widget_pos'))
-            w.set_glass(*glass.widget_values(self.manager.settings))
-            self._perf_widget = w
+            w.remove_requested.connect(lambda k: self._set_widget(k, False))
+            w.edit_requested.connect(self._edit_widgets)
+            w.moved.connect(self._on_widget_moved)
+            w.occupied = lambda me=w: [o.frameGeometry() for o in self._widgets.values()
+                                       if o is not me and o.isVisible()]
+            if kind in ('performance', 'network'):
+                self.gui._perf_worker.perf_ready.connect(w.set_perf)
+                if self.gui.last_perf is not None:
+                    w.set_perf(self.gui.last_perf)
+            if kind == 'performance':
+                self.gui._gpu_worker.gpu_ready.connect(w.set_gpu)
+                w.set_gpu(self.gui.last_gpu)
+            if kind == 'music':
+                w.control_requested.connect(self._media_control)
+                w.volume_requested.connect(self._media_volume)
+            self._widgets[kind] = w
+            self._configure_widget(w)
+            positions = s.get('widget_pos') or {}
+            w.place(positions.get(kind) or (s.get('perf_widget_pos') if kind == 'performance' else None))
+            if w.snap_enabled:                          # older positions: onto the grid
+                from ui.desktop_widgets import snap
+                w.move(snap(w.pos(), (w.width(), w.height()), w.occupied()))
+            w.set_glass(*glass.widget_values(s))
             w.show()
-        elif not on and self._perf_widget is not None:
-            self._perf_widget.dispose()
-            self._perf_widget.deleteLater()
-            self._perf_widget = None
+            self._widget_feeds()
+        elif not on and w is not None:
+            w.dispose()
+            w.deleteLater()
+            del self._widgets[kind]
+            self._widget_feeds()
+
+    def _any_widget_enabled(self) -> bool:
+        from ui.desktop_widgets import KINDS
+        return any(self.widget_enabled(k) for k in KINDS)
+
+    def _restore_widgets(self):
+        from ui.desktop_widgets import KINDS
+        for kind in KINDS:
+            if self.widget_enabled(kind):
+                self._set_widget(kind, True)
+
+    def _configure_widget(self, w):
+        """Apply Settings › Widgets & Menu Bar to one widget."""
+        s = self.manager.settings
+        w.snap_enabled = bool(s.get('widget_snap', True))
+        if w.kind == 'performance':
+            w.configure(s.get('widget_perf_rows', ['cpu', 'ram', 'gpu', 'ssd']),
+                        s.get('widget_perf_net', True))
+        elif w.kind == 'clock':
+            w.configure(s.get('widget_clock_style', 'digital'), bool(s.get('widget_clock_seconds', False)),
+                        bool(s.get('widget_clock_24h', True)))
+        elif w.kind == 'network':
+            hist = s.get('speedtest_history') or []
+            w.set_speed_test(hist[0] if hist else None)
+
+    def _apply_widget_settings(self):
+        """Settings › Widgets & Menu Bar changed."""
+        from ui.desktop_widgets import KINDS, snap
+        for kind in KINDS:
+            if self.widget_enabled(kind) != (kind in self._widgets):
+                self._set_widget(kind, self.widget_enabled(kind))
+        for w in self._widgets.values():
+            was_snapping = w.snap_enabled
+            self._configure_widget(w)
+            if w.snap_enabled and not was_snapping:
+                w.move(snap(w.pos(), (w.width(), w.height()), w.occupied()))
+        if self._popup is not None:
+            self._popup.apply_sections(self.manager.settings)
+
+    def _widget_feeds(self):
+        """Start / stop the slow updates only the shown widgets need."""
+        if not hasattr(self, '_ip_timer'):
+            self._ip_timer = QTimer(self)
+            self._ip_timer.setInterval(5 * 60 * 1000)
+            self._ip_timer.timeout.connect(self._refresh_widget_ips)
+            self._music_timer = QTimer(self)
+            self._music_timer.setInterval(2000)
+            self._music_timer.timeout.connect(self._refresh_music)
+            self._music_busy = False
+        if 'network' in self._widgets:
+            if not self._ip_timer.isActive():
+                self._ip_timer.start()
+                self._refresh_widget_ips()
+        else:
+            self._ip_timer.stop()
+        if 'music' in self._widgets:
+            if not self._music_timer.isActive():
+                self._music_timer.start()
+                self._refresh_music()
+        else:
+            self._music_timer.stop()
+
+    def _refresh_widget_ips(self):
+        from core import sysinfo
+
+        def work():
+            sysinfo.snapshot()                 # also refreshes the public IP in the background
+            return sysinfo._local_ip(), sysinfo._cache.get('public_ip', (0, None))[1]
+
+        def done(r):
+            w = self._widgets.get('network')
+            if w is not None and isinstance(r, tuple) and len(r) == 2:
+                w.set_ips(*r)
+                if not r[1]:
+                    QTimer.singleShot(4000, self._refresh_widget_ips)   # public IP still coming
+        call_async(self, work, done)
+
+    def _refresh_music(self):
+        if self._music_busy or 'music' not in self._widgets:
+            return
+        self._music_busy = True
+        from core import media
+
+        def done(r):
+            self._music_busy = False
+            w = self._widgets.get('music')
+            if w is not None and isinstance(r, tuple) and len(r) == 2:
+                w.set_now_playing(*r)
+        call_async(self, lambda: (media.now_playing(), media.volume()), done)
+
+    def _media_control(self, action: str, app: str):
+        from core import media
+
+        def done(ok):
+            if ok is False and not app and not media.accessibility_allowed():
+                self._notify("ST-SoftwareTool — Music & Audio",
+                             "To control players like SoundCloud in your browser, allow "
+                             "ST-SoftwareTool in System Settings › Privacy & Security › Accessibility.")
+            QTimer.singleShot(300, self._refresh_music)
+        call_async(self, lambda: media.control(action, app or None), done)
+
+    def _media_volume(self, level: int):
+        from core import media
+        work = media.toggle_mute if level < 0 else (lambda: media.set_volume(level))
+        call_async(self, work, lambda _r: QTimer.singleShot(100, self._refresh_music))
+
+    def _edit_widgets(self):
+        """A widget's "Edit Widgets…": open Settings at the widgets section."""
+        self._tray_open()
+        self._go_gui()
+        self.gui.show_widget_settings()
+
+    def _on_speed_test(self, result: dict):
+        w = self._widgets.get('network')
+        if w is not None:
+            w.set_speed_test(result)
 
     def _seed_perf(self, panel):
         """Show the latest numbers immediately instead of '—' until the next sample."""
@@ -988,12 +1145,12 @@ class MainWindow(QMainWindow):
         os._exit(0)   # no saving on the way out: the data folder is gone on purpose
 
     def _apply_widget_glass(self):
-        """Settings › Glass Look widget sliders moved — restyle the widget live."""
-        if self._perf_widget is not None:
-            self._perf_widget.set_glass(*glass.widget_values(self.manager.settings))
+        """Settings › Glass Look widget sliders moved — restyle the widgets live."""
+        for w in self._widgets.values():
+            w.set_glass(*glass.widget_values(self.manager.settings))
 
-    def _on_perf_widget_moved(self, x: int, y: int):
-        self.manager.settings['perf_widget_pos'] = [x, y]
+    def _on_widget_moved(self, kind: str, x: int, y: int):
+        self.manager.settings.setdefault('widget_pos', {})[kind] = [x, y]
         self._save_settings_quietly()
 
     def _save_settings_quietly(self):
@@ -1003,9 +1160,9 @@ class MainWindow(QMainWindow):
             pass
 
     def _do_cleanup(self):
-        if self._perf_widget is not None:
-            self._perf_widget.dispose()
-            self._perf_widget = None
+        for w in list(self._widgets.values()):
+            w.dispose()
+        self._widgets.clear()
         if self._popup is not None:
             self._popup.hide()
         self.gui.cleanup()

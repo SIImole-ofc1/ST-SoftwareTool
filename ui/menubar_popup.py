@@ -88,10 +88,26 @@ class MenuBarPopup(QWidget):
         self._apply_style()
         self.setFixedWidth(self.panel.width() + 20)
 
+    # ── what's shown (Settings › Widgets & Menu Bar) ───────────────────────────
+
+    def apply_sections(self, settings: dict) -> None:
+        keys = settings.get('popup_sections')
+        on = (lambda k: True) if not keys else (lambda k: k in keys)
+        self.panel.set_visible_parts(on('bars'), on('netline'))
+        self.details.set_shown(None if not keys else keys)
+        self._vpn_allowed = on('vpn')
+        self._vpn_row.setVisible(self._vpn_allowed and self._vpn_available)
+        self._widget_chk.setVisible(on('widgets'))
+        self.adjustSize()
+
     # ── state in ──────────────────────────────────────────────────────────────
 
+    _vpn_allowed = True
+    _vpn_available = False
+
     def set_vpn(self, available: bool, connected: bool = False, busy: bool = False) -> None:
-        self._vpn_row.setVisible(available)
+        self._vpn_available = available
+        self._vpn_row.setVisible(available and self._vpn_allowed)
         self._vpn_lbl.setText('VPN  Connecting…' if busy else
                               'VPN  Connected (Tor)' if connected else 'VPN  Off')
         self._vpn_dot.setStyleSheet(f'color: {"#30D158" if connected else "#FF9F0A" if busy else "#8E8E93"};')

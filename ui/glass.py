@@ -97,18 +97,19 @@ class MacBackdrop:
         return self._blur.update(True, blur_alpha(blur), dark, transparent_titlebar=True)
 
 
-def rounded_mask_png(radius: float, scale: float = 2.0) -> bytes:
+def rounded_mask_png(radius: float, scale: float = 2.0, margin: float = 0.0) -> bytes:
     """A small 9-slice PNG of a rounded rectangle, used to give the native blur round
-    corners (NSVisualEffectView.maskImage)."""
+    corners (NSVisualEffectView.maskImage). margin: a clear border around it (points)."""
     from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF
     from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath
-    side = int((2 * radius + 2) * scale)
+    side = int((2 * (radius + margin) + 2) * scale)
+    m = margin * scale
     img = QImage(side, side, QImage.Format_ARGB32_Premultiplied)
     img.fill(0)
     p = QPainter(img)
     p.setRenderHint(QPainter.Antialiasing)
     path = QPainterPath()
-    path.addRoundedRect(QRectF(0, 0, side, side), radius * scale, radius * scale)
+    path.addRoundedRect(QRectF(m, m, side - 2 * m, side - 2 * m), radius * scale, radius * scale)
     p.fillPath(path, QColor(0, 0, 0))
     p.end()
     data = QByteArray()

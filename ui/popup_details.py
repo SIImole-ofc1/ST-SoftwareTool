@@ -65,17 +65,31 @@ class DetailsPanel(QWidget):
 
     # ── layout ────────────────────────────────────────────────────────────────
 
+    # Settings › Widgets & Menu Bar keys for each section
+    _KEYS = {'cpu': 'cores', 'mem': 'memory', 'disk': 'disk', 'net': 'network',
+             'battery': 'battery', 'top': 'top'}
+    shown = None            # None = everything; else a set of keys (plus 'system')
+
+    def set_shown(self, keys) -> None:
+        self.shown = set(keys) if keys is not None else None
+        self._fit()
+        self.update()
+
+    def _on(self, key: str) -> bool:
+        return self.shown is None or key in self.shown
+
     def _sections(self):
         sections = [('cpu', _HEAD + _CORE_H + 4), ('mem', _HEAD + 2 * _ROW),
                     ('disk', _HEAD + 2 * _ROW), ('net', _HEAD + _ROW)]
         if self._s.get('battery'):
             sections.append(('battery', _HEAD + 2 * _ROW))
         sections.append(('top', _HEAD + 3 * _ROW))
-        return sections
+        return [(name, h) for name, h in sections if self._on(self._KEYS[name])]
 
     def _fit(self) -> None:
-        h = sum(height + _GAP for _, height in self._sections()) + _ROW + 4
-        self.setFixedSize(_W, h)
+        h = sum(height + _GAP for _, height in self._sections()) + (_ROW + 4 if self._on('system') else 0)
+        self.setFixedSize(_W, max(1, h))
+        self.setVisible(h > 0)
 
     # ── drawing ───────────────────────────────────────────────────────────────
 
@@ -105,6 +119,9 @@ class DetailsPanel(QWidget):
             getattr(self, f'_draw_{name}')(p, y + 4, s)
             y += height + _GAP
         # footer: OS and uptime
+        if not self._on('system'):
+            p.end()
+            return
         p.setFont(self._f_key)
         p.setPen(self._sub)
         foot = '  ·  '.join(x for x in (s.get('os'), f"up {s['uptime']}" if s.get('uptime') else '') if x)
