@@ -17,7 +17,12 @@ class CommandResult:
 HELP_TEXT = """\
 ST-SoftwareTool  —  Command Reference
 ══════════════════════════════════════════════════
-All commands require  >_/  prefix:
+Shell (macOS / Linux: your login shell · Windows: PowerShell):
+  Type any command without  >_/  —  ls, cd, pwd, cat, grep, git, brew, python3 …
+  Ctrl+C stops a running command; while one runs, Enter sends your text to it.
+  Full-screen programs (vim, top, less, ssh …) open in Terminal.
+
+ST-SoftwareTool commands start with  >_/ :
 
 App management:
   >_/app:list                         List all apps
@@ -53,6 +58,9 @@ Window control:
 Themes  (1 = Dark B&G · 2 = Dark B&W · 3 = Light · 4 = High Contrast · 5 = Classic
          6 = macOS Glass):
   >_/look=gui:theme_1  through  >_/look=gui:theme_6
+
+Homebrew (macOS):
+  >_/brew:install                     Install Homebrew (asks for your password)
 
 Type  >_/help:show  to show this reference.\
 """
@@ -289,6 +297,10 @@ class CommandProcessor:
             return CommandResult(False, "Commands must start with  >_/")
 
         body = raw[3:].strip()
+
+        # ── brew:install (macOS) ──────────────────────────────────────────────
+        if body.lower() == "brew:install":
+            return CommandResult(True, "", action="brew_install")
 
         # ── help:show ─────────────────────────────────────────────────────────
         if body == "help:show":

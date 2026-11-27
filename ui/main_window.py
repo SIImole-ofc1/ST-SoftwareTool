@@ -155,6 +155,7 @@ class MainWindow(QMainWindow):
             p.widget_toggled.connect(self._set_perf_widget)
             p.vpn_clicked.connect(self._popup_vpn_clicked)
             self.gui._perf_worker.perf_ready.connect(p.panel.set_perf)
+            self.gui._perf_worker.perf_ready.connect(p.details.set_perf)
             self.gui._gpu_worker.gpu_ready.connect(p.panel.set_gpu)
             self._seed_perf(p.panel)
             self._popup = p
@@ -474,6 +475,7 @@ class MainWindow(QMainWindow):
         self.gui.perf_widget_toggled.connect(self._set_perf_widget)
         self.gui.glass_changed.connect(self._on_glass_changed)
         self.gui.widget_glass_changed.connect(self._apply_widget_glass)
+        self.gui.uninstall_requested.connect(self.uninstall_app)
         self.stack.addWidget(self.gui)         # index 1
 
     # ── switching ─────────────────────────────────────────────────────────────
@@ -958,6 +960,26 @@ class MainWindow(QMainWindow):
         if self.gui.last_perf is not None:
             panel.set_perf(self.gui.last_perf)
         panel.set_gpu(self.gui.last_gpu)
+
+    def uninstall_app(self):
+        """Settings › Delete ST-SoftwareTool (already confirmed): stop everything (the VPN
+        restores the network settings), remove the app and its data, and exit without
+        writing anything back."""
+        from core import uninstall
+        self.statusBar().showMessage("Deleting ST-SoftwareTool…")
+        QApplication.processEvents()
+        try:
+            self._do_cleanup()
+        except Exception:
+            pass
+        ok, msg = uninstall.uninstall()
+        if not ok:
+            QMessageBox.warning(self, "Delete ST-SoftwareTool",
+                                msg + "\n\nPlease restart ST-SoftwareTool.")
+            return
+        if not os.environ.get("ST_SMOKE_UNINSTALL"):
+            QMessageBox.information(self, "ST-SoftwareTool deleted", msg + "\n\nGoodbye!")
+        os._exit(0)   # no saving on the way out: the data folder is gone on purpose
 
     def _apply_widget_glass(self):
         """Settings › Glass Look widget sliders moved — restyle the widget live."""

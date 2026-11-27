@@ -264,6 +264,24 @@ jobs:
           hdiutil verify "build/$DMG_NAME"
           ls -lh "build/$DMG_NAME"
 
+      - name: Terminal shell, then Settings › Delete ST-SoftwareTool (on a copy)
+        # Runs after the .dmg is built, on a copy, so the shipped app is untouched
+        run: |
+          copy="$RUNNER_TEMP/delete-test/ST-SoftwareTool.app"
+          mkdir -p "$(dirname "$copy")"
+          ditto build/ST-SoftwareTool.app "$copy"
+          data="$HOME/Library/Application Support/ST-SoftwareTool"
+          cbin="$copy/Contents/MacOS/$(basename "$bin")"
+          set -o pipefail
+          ST_SMOKE_TEST=8 ST_SMOKE_SHELL=1 ST_SMOKE_UNINSTALL=1 "$cbin" | tee build/delete.log
+          grep -q "SMOKE shell=.* ok=True" build/delete.log
+          grep -q "SMOKE uninstall: starting" build/delete.log
+          test ! -e "$copy"            || { echo "app was not removed"; exit 1; }
+          ls -d "$HOME/.Trash/ST-SoftwareTool"*.app   # it went to the Trash
+          test ! -e "$data"            || { echo "data folder was not removed"; exit 1; }
+          test ! -e "$HOME/Library/LaunchAgents/com.stsoftwaretool.app.plist"
+          echo "Delete ST-SoftwareTool: OK"
+
       - name: Screenshot the install window (light + dark mode)
         continue-on-error: true
         run: |

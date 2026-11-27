@@ -271,6 +271,7 @@ class GUIView(QWidget):
     perf_widget_toggled = Signal(bool)       # macOS: desktop Performance widget on / off
     glass_changed      = Signal()            # gloss / blur slider moved (live preview)
     widget_glass_changed = Signal()          # desktop widget gloss / blur slider moved
+    uninstall_requested = Signal()           # Settings › Delete ST-SoftwareTool (confirmed)
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -1163,6 +1164,10 @@ class GUIView(QWidget):
         # ── Glass look (macOS Glass theme) ────────────────────────────────────
         layout.addWidget(self._glass_settings_box())
 
+        # ── Homebrew (macOS) ──────────────────────────────────────────────────
+        if IS_MAC:
+            layout.addWidget(self._homebrew_box())
+
         # ── Default View ──────────────────────────────────────────────────────
         view_box = QGroupBox("Default View on Startup")
         vl = QVBoxLayout(view_box)
@@ -1258,6 +1263,9 @@ class GUIView(QWidget):
         cat_row.addWidget(btn_rm_cat)
         kal.addLayout(cat_row)
         layout.addWidget(cat_box)
+
+        # ── Delete ST-SoftwareTool ────────────────────────────────────────────
+        layout.addWidget(self._uninstall_box())
 
         layout.addStretch()
 
@@ -1381,6 +1389,81 @@ class GUIView(QWidget):
         }.get(theme)
         if rb is not None and not rb.isChecked():
             rb.setChecked(True)
+
+    def _homebrew_box(self) -> QGroupBox:
+        box = QGroupBox("Homebrew")
+        hl = QVBoxLayout(box)
+        row = QHBoxLayout()
+        self._brew_status = QLabel()
+        self._brew_status.setWordWrap(True)
+        self._brew_btn = QPushButton()
+        self._brew_btn.clicked.connect(self._on_brew_button)
+        row.addWidget(self._brew_status, 1)
+        row.addWidget(self._brew_btn)
+        hl.addLayout(row)
+        hint = QLabel("The package manager for macOS. Use it from the ST terminal: "
+                      "brew install git, brew install --cask firefox, brew upgrade …")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size: 10px;")
+        hl.addWidget(hint)
+        self._refresh_brew_status()
+        return box
+
+    def _refresh_brew_status(self):
+        from core import homebrew
+        if homebrew.is_installed():
+            ver = homebrew.version() or "Homebrew"
+            self._brew_status.setText(f"✓  {ver}  —  {homebrew.brew_path()}")
+            self._brew_btn.setText("Open in Terminal")
+        else:
+            self._brew_status.setText("Homebrew is not installed on this Mac.")
+            self._brew_btn.setText("Install Homebrew…")
+
+    def _on_brew_button(self):
+        from core import homebrew
+        if homebrew.is_installed():
+            self.switch_to_terminal.emit()
+            return
+        from ui.homebrew_ui import install_homebrew
+        self._brew_btn.setEnabled(False)
+        install_homebrew(self.window(), on_done=lambda ok: (
+            self._brew_btn.setEnabled(True), self._refresh_brew_status()))
+
+    def _uninstall_box(self) -> QGroupBox:
+        from core import uninstall
+        box = QGroupBox("Delete ST-SoftwareTool")
+        ul = QHBoxLayout(box)
+        what = ("Removes the app, its settings and all its data from this "
+                + ("Mac (the app goes to the Trash)." if IS_MAC else "computer."))
+        lbl = QLabel(what if uninstall.can_uninstall() else
+                     "This copy runs from source code — there is no installed app to delete.")
+        lbl.setWordWrap(True)
+        btn = QPushButton("Delete ST-SoftwareTool…")
+        btn.setObjectName("dangerButton")
+        btn.setStyleSheet("QPushButton#dangerButton:enabled { color: #ff453a; font-weight: 600; }")
+        btn.setEnabled(uninstall.can_uninstall())
+        btn.clicked.connect(self._confirm_uninstall)
+        ul.addWidget(lbl, 1)
+        ul.addWidget(btn)
+        return box
+
+    def _confirm_uninstall(self):
+        from core import uninstall
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Delete ST-SoftwareTool")
+        box.setText("Delete ST-SoftwareTool from this "
+                    + ("Mac?" if IS_MAC else "computer?"))
+        box.setInformativeText(
+            "This removes:\n" + "\n".join(f"•  {item}" for item in uninstall.plan())
+            + "\n\nThe VPN is disconnected first. Homebrew and the apps you added stay. "
+              "ST-SoftwareTool quits when it is done.")
+        delete = box.addButton("Delete", QMessageBox.DestructiveRole)
+        cancel = box.addButton("Cancel", QMessageBox.RejectRole)
+        box.setDefaultButton(cancel)
+        box.exec()
+        if box.clickedButton() is delete:
+            self.uninstall_requested.emit()
 
     def _reset_glass(self):
         self.sl_gloss.setValue(glass.DEFAULT_GLOSS)

@@ -139,6 +139,22 @@ jobs:
           if (-not $app.WaitForExit(600000)) { $app.Kill(); throw "Glass smoke test timed out" }
           if ($app.ExitCode -ne 0) { throw "Glass smoke test failed (exit $($app.ExitCode))" }
 
+      - name: Terminal shell, then Settings › Delete ST-SoftwareTool
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:ProgramFiles 'ST-SoftwareTool'
+          $data = Join-Path $env:APPDATA 'ST-SoftwareTool'
+          $env:ST_SMOKE_TEST = '8'; $env:ST_SMOKE_SHELL = '1'; $env:ST_SMOKE_UNINSTALL = '1'
+          $app = Start-Process (Join-Path $dir 'ST.exe') -PassThru
+          if (-not $app.WaitForExit(300000)) { $app.Kill(); throw "Delete test timed out" }
+          Write-Host "App exit code: $($app.ExitCode)"
+          if ($app.ExitCode -ne 0) { throw "Shell check or delete failed (exit $($app.ExitCode))" }
+          # The uninstaller runs on after the app quits
+          for ($i = 0; $i -lt 90 -and (Test-Path (Join-Path $dir 'ST.exe')); $i++) { Start-Sleep 2 }
+          if (Test-Path (Join-Path $dir 'ST.exe')) { throw "ST.exe was not removed" }
+          if (Test-Path $data) { throw "The data folder was not removed: $data" }
+          Write-Host "Delete ST-SoftwareTool: OK"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

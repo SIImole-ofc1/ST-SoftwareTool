@@ -1,17 +1,20 @@
 """Menu-bar popup (macOS): opens when the ST logo in the menu bar is clicked, like Stats.
 
-Shows live performance, the VPN state with a connect button, the desktop-widget switch and
-Open / Quit. Closes again when the user clicks anywhere else.
+Shows live performance, more system details (cores, memory, disk, network, battery, busiest
+apps), the VPN state with a connect button, the desktop-widget switch and Open / Quit. Closes
+again when the user clicks anywhere else.
 """
 from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QPoint, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from ui.async_call import call_async
 from ui.perf_widget import PerfPanel, is_dark
+from ui.popup_details import DetailsPanel
 
 _RADIUS = 16
 
@@ -33,6 +36,14 @@ class MenuBarPopup(QWidget):
 
         self.panel = PerfPanel(self, title='ST-SoftwareTool', framed=False)
         root.addWidget(self.panel)
+
+        # More details, refreshed every 2 s while the popup is open (never in the background)
+        self.details = DetailsPanel(self)
+        root.addWidget(self.details)
+        self._details_timer = QTimer(self)
+        self._details_timer.setInterval(2000)
+        self._details_timer.timeout.connect(self._refresh_details)
+        self._details_busy = False
 
         # VPN (shown once the VPN is available on this Mac)
         self._vpn_row = QWidget()
@@ -112,9 +123,27 @@ class MenuBarPopup(QWidget):
         self.show()
         self.raise_()
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._refresh_details()
+        self._details_timer.start()
+
     def hideEvent(self, event) -> None:
         self.closed_at = time.monotonic()
+        self._details_timer.stop()
         super().hideEvent(event)
+
+    def _refresh_details(self) -> None:
+        if self._details_busy:
+            return
+        self._details_busy = True
+        from core import sysinfo
+
+        def done(snap):
+            self._details_busy = False
+            self.details.set_snapshot(snap)
+            self.adjustSize()
+        call_async(self, sysinfo.snapshot, done)
 
     # ── look ──────────────────────────────────────────────────────────────────
 

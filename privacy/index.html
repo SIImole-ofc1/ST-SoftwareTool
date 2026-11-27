@@ -33,7 +33,7 @@
 <main class="legal-main">
     <article class="legal-document">
         <h1>Privacy Policy &amp; Terms of Use - SIImole</h1>
-        <p style="font-size:12px;color:#aab7ca;margin-top:-4px">Last updated: 26 November 2026</p>
+        <p style="font-size:12px;color:#aab7ca;margin-top:-4px">Last updated: 27 November 2026</p>
         <nav class="legal-index" aria-label="On this page">
             <a href="#sec-data">Your Data</a>
             <a href="#sec-online">What Goes Online</a>
@@ -85,12 +85,24 @@
                     <strong>Your IP address:</strong> when ST-SoftwareTool starts, the VPN tab asks ipify
                     (api.ipify.org) for your public IPv4 and IPv6 address so it can show them. While the
                     VPN is connected, it checks your Tor exit address through Tor (ipify or
-                    checkip.amazonaws.com).
+                    checkip.amazonaws.com). On a Mac, the menu-bar popup also asks ipify for your public
+                    IPv4 address to show it - at most once every 10 minutes, and only while the popup is open.
                 </li>
                 <li><strong>ST-VPN:</strong> only while you are connected - see section 3.</li>
                 <li>
                     <strong>Video downloads:</strong> only when you use the YouTube download command; the
                     built-in yt-dlp tool then connects to that video site.
+                </li>
+                <li>
+                    <strong>Homebrew (Mac):</strong> only if you choose to install it; the app downloads
+                    Homebrew's official installer from GitHub (github.com/Homebrew) and checks its signature,
+                    or on older and Intel Macs opens Terminal with Homebrew's official install command
+                    (raw.githubusercontent.com).
+                </li>
+                <li>
+                    <strong>Terminal commands:</strong> commands you type in the terminal run on your
+                    computer like in any terminal, so they connect wherever you tell them to
+                    (for example <code>brew install</code> or <code>git clone</code>).
                 </li>
                 <li>
                     <strong>Download Tor (Windows):</strong> only if you click it; it fetches the Tor Expert
@@ -162,7 +174,7 @@
             <p>Because everything is stored locally, you're always in full control:</p>
             <ul>
                 <li><strong>View or back up:</strong> Access or copy your files anytime from the app data folder on your device.</li>
-                <li><strong>Delete or uninstall:</strong> Removing the software and its data clears all traces from your device.</li>
+                <li><strong>Delete or uninstall:</strong> Settings &rsaquo; Delete ST-SoftwareTool removes the app and all its data from your device in one step (on a Mac the app goes to the Trash).</li>
                 <li><strong>Turn features off:</strong> The hourly scan and automatic blocking can be switched off in Settings, and the VPN only connects when you choose.</li>
                 <li><strong>No sign-up:</strong> No account or personal registration is required to use SIImole.</li>
             </ul>

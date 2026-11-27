@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
+from .shell_runner import ShellRunner, needs_real_terminal
 from core.updater import APP_VERSION
 from . import glass
 
@@ -182,6 +183,7 @@ _COMMAND_HINTS = [
     ">_/look=gui:theme_4",
     ">_/look=gui:theme_5",
     ">_/look=gui:theme_6",
+    ">_/brew:install",
     ">_/from_youtube+URL={}_download:to_Pictures",
 ]
 
@@ -201,6 +203,11 @@ class TerminalWidget(QWidget):
         self._palette = self._palette_for(self._theme)
         self._suggestions_enabled = manager.settings.get("terminal_suggestions", True)
         self._yt_workers: list = []  # keep references so GC doesn't kill active threads
+
+        self._shell = ShellRunner(self)
+        self._shell.output.connect(self._on_shell_output)
+        self._shell.finished.connect(self._on_shell_finished)
+        self._shell_stopped = False
 
         self._build_ui()
         self._setup_completer()
@@ -241,7 +248,8 @@ class TerminalWidget(QWidget):
 
         self.input_field = QLineEdit()
         self.input_field.setFont(_FONT)
-        self.input_field.setPlaceholderText("type a command…")
+        self.input_field.setPlaceholderText(
+            "type a shell command (ls, cd, brew …)  or  >_/help:show")
         self.input_field.returnPressed.connect(self._on_enter)
         self.input_field.installEventFilter(self)
         bar.addWidget(self.input_field)
@@ -367,15 +375,18 @@ class TerminalWidget(QWidget):
 
     def _on_enter(self):
         raw = self.input_field.text().strip()
+        if self._shell.is_running():
+            # A command is running: the line is its input (e.g. an answer to y/n)
+            self.input_field.clear()
+            self._write(raw, self._color("info"))
+            self._shell.send_input(raw)
+            return
         if not raw:
             return
         self.input_field.clear()
 
         if not raw.startswith(">_/"):
-            self._write(
-                f"Commands require  >_/  prefix.  Try:  >_/{raw}",
-                self._color("error"),
-            )
+            self._run_shell(raw)
             return
 
         if not (self._history and self._history[-1] == raw):
@@ -408,6 +419,9 @@ class TerminalWidget(QWidget):
             self.set_theme(theme)
             self.theme_changed.emit(theme)
             return
+        if action == "brew_install":
+            self._install_homebrew()
+            return
         if action == "youtube_download":
             self._write(result.message, self._color("info"))
             self._run_yt_download(result.data["url"])
@@ -419,6 +433,57 @@ class TerminalWidget(QWidget):
                 self._write(line, ink)
 
         self._write("")
+
+    # ── shell commands ────────────────────────────────────────────────────────
+
+    def _run_shell(self, command: str):
+        if not (self._history and self._history[-1] == command):
+            self._history.append(command)
+        self._hist_idx = len(self._history)
+        self._write(f"{self._shell.display_cwd()} $ {command}", self._color("prompt"))
+
+        first = command.split()[0] if command.split() else ""
+        if first in ("clear", "cls"):
+            self._show_banner()
+            return
+        if IS_MAC and first == "brew":
+            from core import homebrew
+            if not homebrew.is_installed():
+                self._write("Homebrew isn't installed yet.  Type  >_/brew:install  to install it "
+                            "(or use Settings › Homebrew).", self._color("warn"))
+                self._write("")
+                return
+        if needs_real_terminal(command):
+            self._write(f"'{first}' needs a full terminal window — "
+                        f"{self._shell.open_in_terminal(command)}", self._color("info"))
+            self._write("")
+            return
+        self._shell_stopped = False
+        self._shell.run(command)
+        self.input_field.setPlaceholderText("running…  Ctrl+C stops it · Enter sends input")
+
+    def _on_shell_output(self, text: str, is_err: bool):
+        self._write(text, self._color("error") if is_err else self._color("text"))
+
+    def _on_shell_finished(self, code: int):
+        if self._shell_stopped:
+            self._write("^C  stopped", self._color("warn"))
+        elif code != 0:
+            self._write(f"[exit {code}]", self._color("error"))
+        self._write("")
+        self.input_field.setPlaceholderText(
+            "type a shell command (ls, cd, brew …)  or  >_/help:show")
+
+    def _stop_shell(self):
+        if self._shell.is_running():
+            self._shell_stopped = True
+            self._shell.stop()
+
+    def _install_homebrew(self):
+        from ui.homebrew_ui import install_homebrew
+        install_homebrew(self, on_message=lambda ok, msg: (
+            self._write(msg, self._color("success") if ok else self._color("error")),
+            self._write("")))
 
     def _run_scan(self):
         try:
@@ -488,6 +553,12 @@ class TerminalWidget(QWidget):
     def eventFilter(self, obj, event):
         if obj is self.input_field and event.type() == QEvent.KeyPress:
             key = event.key()
+            # Ctrl+C (the Control key, also on a Mac keyboard) stops the running command
+            mods = event.modifiers()
+            ctrl = (mods & Qt.MetaModifier) if IS_MAC else (mods & Qt.ControlModifier)
+            if key == Qt.Key_C and ctrl and self._shell.is_running():
+                self._stop_shell()
+                return True
             if key == Qt.Key_Up:
                 if self._hist_idx > 0:
                     self._hist_idx -= 1

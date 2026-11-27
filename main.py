@@ -136,9 +136,44 @@ def _smoke_test(app, window, seconds: float) -> None:
         print(f"SMOKE {'FAILED' if errors else 'OK'} ({len(errors)} error(s))", flush=True)
         for e in errors:
             print(e, flush=True)
+        if os.environ.get("ST_SMOKE_UNINSTALL") and not errors:
+            # Settings › Delete ST-SoftwareTool, as if confirmed (the build pipeline then
+            # checks the app and its data are really gone)
+            print("SMOKE uninstall: starting", flush=True)
+            window.uninstall_app()
+            print("SMOKE uninstall: did not exit", flush=True)
+            os._exit(1)
         window._force_quit = True
         window.gui.cleanup()
         os._exit(1 if errors else 0)
+
+    # ST_SMOKE_SHELL=1: run real shell commands through the terminal (output, cd, exit code)
+    def check_shell():
+        sh = window.terminal._shell
+        home = sh.cwd
+        out, codes = [], []
+        sh.output.connect(lambda text, err: out.append(text))
+        sh.finished.connect(lambda code: codes.append(code))
+        steps = ["echo st-shell-ok", "cd ..", "exit 3" if sys.platform != "win32" else "cmd /c exit 3"]
+
+        def step(i=0):
+            if sh.is_running():
+                QTimer.singleShot(200, lambda: step(i))
+                return
+            if i == len(steps):
+                ok = (any("st-shell-ok" in t for t in out) and codes[:1] == [0]
+                      and sh.cwd != home and codes[2:3] == [3])
+                print(f"SMOKE shell={sh.shell_name()} out={out!r} codes={codes} cwd={sh.cwd!r} "
+                      f"ok={ok}", flush=True)
+                if not ok:
+                    errors.append("Terminal: shell commands did not run as expected")
+                return
+            sh.run(steps[i])
+            QTimer.singleShot(300, lambda: step(i + 1))
+        step()
+
+    if os.environ.get("ST_SMOKE_SHELL"):
+        QTimer.singleShot(1200, check_shell)
 
     # ST_SMOKE_SHOTS=<folder>: afterwards show each tab for a few seconds (so lists that
     # load in the background can fill) and save a screenshot of the window, then quit.
@@ -341,6 +376,11 @@ def main():
         _smoke_test(app, window, float(smoke))
     else:
         start_auto_updates(window)
+        if sys.platform == "darwin" and window.isVisible():
+            # Once: offer Homebrew to Mac users who don't have it (never installs by itself)
+            from ui.homebrew_ui import offer_on_first_launch
+            QTimer.singleShot(2500, lambda: offer_on_first_launch(
+                window, manager.settings, window._save_settings_quietly))
 
     sys.exit(app.exec())
 
