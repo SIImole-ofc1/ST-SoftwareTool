@@ -796,6 +796,10 @@ class DeviceSettingsView(QWidget):
         self._build()
 
     def set_theme(self, theme: str):
+        if theme == 'glass':
+            from ui import glass
+            self._sidebar.setStyleSheet(glass.sidebar_qss())
+            return
         qss = self._SIDEBAR_QSS.get(theme, self._SIDEBAR_QSS['dark'])
         self._sidebar.setStyleSheet(qss)
 

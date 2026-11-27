@@ -6,6 +6,7 @@ import subprocess
 import sys
 from core.osinfo import IS_MAC, IS_WINDOWS, NO_WINDOW
 from core.updater import APP_VERSION
+from . import glass
 
 # Dark  —  Black & Green
 _D = {
@@ -180,6 +181,7 @@ _COMMAND_HINTS = [
     ">_/look=gui:theme_3",
     ">_/look=gui:theme_4",
     ">_/look=gui:theme_5",
+    ">_/look=gui:theme_6",
     ">_/from_youtube+URL={}_download:to_Pictures",
 ]
 
@@ -196,7 +198,7 @@ class TerminalWidget(QWidget):
         self._history: list[str] = []
         self._hist_idx: int = 0
         self._theme = manager.settings.get("theme", "dark")
-        self._palette = _PALETTES.get(self._theme, _D)
+        self._palette = self._palette_for(self._theme)
         self._suggestions_enabled = manager.settings.get("terminal_suggestions", True)
         self._yt_workers: list = []  # keep references so GC doesn't kill active threads
 
@@ -258,8 +260,17 @@ class TerminalWidget(QWidget):
         self._suggestions_enabled = enabled
         self.input_field.setCompleter(self._completer if enabled else None)
 
+    @staticmethod
+    def _palette_for(theme: str) -> dict:
+        if theme == glass.THEME_KEY:
+            return glass.terminal_palette()
+        return _PALETTES.get(theme, _D)
+
     def _apply_theme(self):
         p = self._palette
+        if self._theme == glass.THEME_KEY:
+            self._apply_glass_theme(p)
+            return
         txt_style = f"""
             QTextEdit {{
                 background-color: {p['bg']};
@@ -282,13 +293,48 @@ class TerminalWidget(QWidget):
         """)
         self.setStyleSheet(f"background-color: {p['input_bg']};")
 
-    def set_theme(self, theme: str):
+    def _apply_glass_theme(self, p: dict):
+        # Transparent panes so the window's frosted glass shows through. Scoped by
+        # object name so the colour doesn't stack up on every child widget.
+        self.setObjectName("stTerminal")
+        self.setStyleSheet(f"#stTerminal {{ background: transparent; }}")
+        txt_style = f"""
+            QTextEdit {{
+                background: {p['bg']};
+                color: {p['text']};
+                border: none;
+                padding: 10px 12px;
+                selection-background-color: {p['select']};
+            }}
+        """
+        self.banner_area.setStyleSheet(txt_style)
+        self.output.setStyleSheet(txt_style)
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
+                background: {p['input_bg']};
+                color: {p['text']};
+                border: 1px solid {p['border']};
+                border-radius: 9px;
+                padding: 7px 12px;
+                selection-background-color: {p['select']};
+            }}
+            QLineEdit:focus {{ border: 1px solid {p['prompt']}; }}
+        """)
+
+    def set_theme(self, theme: str, keep_output: bool = False):
         self._theme = theme
-        self._palette = _PALETTES.get(theme, _D)
+        self._palette = self._palette_for(theme)
         self._apply_theme()
-        self._show_banner()  # re-render so text colors update (char format overrides stylesheet)
+        if keep_output:
+            self._render_banner()
+        else:
+            self._show_banner()  # re-render so text colors update (char format overrides stylesheet)
 
     def _show_banner(self):
+        self._render_banner()
+        self.output.clear()
+
+    def _render_banner(self):
         self.banner_area.clear()
         cur = self.banner_area.textCursor()
         cur.movePosition(QTextCursor.End)
@@ -297,7 +343,6 @@ class TerminalWidget(QWidget):
         fmt.setForeground(QColor(self._color("text")))
         self.banner_area.setCurrentCharFormat(fmt)
         self.banner_area.insertPlainText(_BANNER)
-        self.output.clear()
 
     # ── output helpers ────────────────────────────────────────────────────────
 

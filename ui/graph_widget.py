@@ -1,6 +1,6 @@
 """
 Self-contained rolling graph widget (QPainter) and a detail dialog.
-Supports four themes that match the rest of the UI.
+Supports the same themes as the rest of the UI.
 """
 from collections import deque
 
@@ -11,6 +11,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import (
     QPainter, QPen, QColor, QPainterPath, QFont, QBrush, QLinearGradient,
 )
+
+from . import glass
+
+
+def _theme_colors(theme: str) -> dict:
+    if theme == glass.THEME_KEY:
+        return glass.graph_colors()
+    return _TC.get(theme, _TC["dark"])
 
 # ── per-theme chrome colours ──────────────────────────────────────────────────
 _TC = {
@@ -88,7 +96,9 @@ class UsageGraph(QWidget):
     # ── theme ─────────────────────────────────────────────────────────────────
 
     def set_theme(self, theme: str):
-        self._tc = _TC.get(theme, _TC["dark"])
+        self._tc = _theme_colors(theme)
+        # Glass graphs are see-through, so the parent must paint underneath them.
+        self.setAttribute(Qt.WA_OpaquePaintEvent, "radius" not in self._tc)
         self.update()
         if self._detail:
             self._detail.set_theme(theme)
@@ -133,7 +143,14 @@ def _draw(p: QPainter, w: int, h: int, history, current: float,
     gw = w - PL - PR
     gh = h - PT - PB
 
-    p.fillRect(0, 0, w, h, QColor(tc["bg"]))
+    radius = tc.get("radius", 0)
+    if radius:
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(tc["bg"]))
+        p.drawRoundedRect(0, 0, w, h, radius, radius)
+        p.setBrush(Qt.NoBrush)
+    else:
+        p.fillRect(0, 0, w, h, QColor(tc["bg"]))
 
     small_font = QFont("Consolas", 7)
     p.setFont(small_font)
@@ -172,7 +189,7 @@ def _draw(p: QPainter, w: int, h: int, history, current: float,
         path.closeSubpath()
         p.fillPath(path, QBrush(grad))
 
-        p.setPen(QPen(color, 1.5))
+        p.setPen(QPen(color, 2.0 if radius else 1.5))
         for i in range(1, len(coords)):
             p.drawLine(coords[i-1][0], coords[i-1][1],
                        coords[i][0],   coords[i][1])
@@ -217,6 +234,7 @@ class GraphDetailDialog(QDialog):
         self._graph._history    = deque([0.0] * self.MAX_HISTORY,
                                         maxlen=self.MAX_HISTORY)
         self._graph._tc = tc
+        self._graph.setAttribute(Qt.WA_OpaquePaintEvent, "radius" not in tc)
         layout.addWidget(self._graph)
 
         stats_row = QHBoxLayout()
@@ -241,8 +259,8 @@ class GraphDetailDialog(QDialog):
             lbl.setStyleSheet(ss)
 
     def set_theme(self, theme: str):
-        tc = _TC.get(theme, _TC["dark"])
-        self._graph._tc = tc
+        tc = _theme_colors(theme)
+        self._graph.set_theme(theme)
         self._graph.update()
         self._apply_stat_style(tc)
 

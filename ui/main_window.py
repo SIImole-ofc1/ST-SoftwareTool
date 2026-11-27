@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QKeySequence, QIcon, QFont, QPixmap, QCursor
 from PySide6.QtCore import Qt, QTimer
 from core import mac_appkit
+from . import glass
 from .terminal_widget import TerminalWidget
 from .gui_view import GUIView
 from core.privacy_monitor import PrivacyMonitor
@@ -30,6 +31,17 @@ class MainWindow(QMainWindow):
                              "assets", "STsoftwareterminalLOGO.png.png")
         self._app_icon = QIcon(_icon) if os.path.exists(_icon) else QIcon()
         self.setWindowIcon(self._app_icon)
+
+        # macOS Glass theme: the window must be translucent before its native window
+        # exists. Opaque themes paint a solid background, so they look the same.
+        self._backdrop = glass.MacBackdrop(self)
+        self._glass_native = glass.native_blur_supported()
+        if self._glass_native:
+            self.setAttribute(Qt.WA_TranslucentBackground)
+        try:
+            QApplication.styleHints().colorSchemeChanged.connect(self._on_color_scheme_changed)
+        except AttributeError:
+            pass
 
         # Instantiate scanner/privacy before building menu (menu references them)
         self._privacy = PrivacyMonitor(self)
@@ -419,11 +431,12 @@ class MainWindow(QMainWindow):
 
         theme_sub = tools_m.addMenu("Themes")
         for label, key in (
-            ("Dark  —  Black & Green", "dark"),
-            ("Dark  —  Black & White", "dark_bw"),
-            ("Light  —  Black & White", "light"),
+            ("Dark  —  Black && Green", "dark"),
+            ("Dark  —  Black && White", "dark_bw"),
+            ("Light  —  Black && White", "light"),
             ("High Contrast", "hc"),
             ("Classic", "win95"),
+            ("macOS Glass", "glass"),
         ):
             a = QAction(label, self)
             a.triggered.connect(lambda _=False, k=key: self._set_theme(k))
@@ -459,6 +472,7 @@ class MainWindow(QMainWindow):
         self.gui.settings_applied.connect(self._on_settings_applied)
         self.gui.settings_changed.connect(self._on_settings_changed)
         self.gui.perf_widget_toggled.connect(self._set_perf_widget)
+        self.gui.glass_changed.connect(self._on_glass_changed)
         self.stack.addWidget(self.gui)         # index 1
 
     # ── switching ─────────────────────────────────────────────────────────────
@@ -503,8 +517,33 @@ class MainWindow(QMainWindow):
         self.gui.set_perf_theme(theme)
         self._apply_theme()
 
+    def _on_glass_changed(self):
+        """Gloss / blur slider moved in Settings — restyle live if glass is active."""
+        if self.manager.settings.get("theme") == glass.THEME_KEY:
+            self._apply_theme()
+
+    def _on_color_scheme_changed(self, *_):
+        # The glass theme follows macOS Light / Dark mode.
+        if self.manager.settings.get("theme") == glass.THEME_KEY:
+            self._apply_theme()
+            self.terminal.set_theme(glass.THEME_KEY, keep_output=True)
+            self.gui.set_perf_theme(glass.THEME_KEY)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.manager.settings.get("theme") == glass.THEME_KEY and not self._backdrop.attached:
+            self._apply_theme()   # the native backdrop needs an on-screen window
+
     def _apply_theme(self):
         theme = self.manager.settings.get("theme", "win95")
+
+        if theme == glass.THEME_KEY:
+            gloss, blur = glass.settings_values(self.manager.settings)
+            dark = glass.is_dark()
+            native = self._backdrop.apply(True, blur, dark) if self.isVisible() else self._glass_native
+            self.setStyleSheet(glass.build_qss(gloss, blur, native, dark))
+            return
+        self._backdrop.apply(False, 0, True)
 
         if theme == "dark":
             qss = """

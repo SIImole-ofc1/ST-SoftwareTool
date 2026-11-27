@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QApplication,
     QScrollArea, QTableView, QAbstractItemView, QHeaderView,
+    QGridLayout, QSlider,
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QThread
 from PySide6.QtGui import QFont, QColor, QBrush, QIcon
@@ -23,6 +24,7 @@ from core.performance_monitor import PerformanceMonitor
 from core.task_manager import TaskManagerBackend
 from ui.async_call import call_async
 from ui.graph_widget import UsageGraph
+from ui import glass
 from ui.task_table import ProcessTableModel, HistoryTableModel, TaskSortProxy
 from ui.antivirus_view import AntivirusView
 from core.osinfo import IS_MAC, IS_WINDOWS
@@ -267,6 +269,7 @@ class GUIView(QWidget):
     settings_applied   = Signal(str, bool)  # (theme_key, suggestions_enabled)
     settings_changed   = Signal()            # protection / privacy settings changed
     perf_widget_toggled = Signal(bool)       # macOS: desktop Performance widget on / off
+    glass_changed      = Signal()            # gloss / blur slider moved (live preview)
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -1109,19 +1112,22 @@ class GUIView(QWidget):
         # ── Theme ─────────────────────────────────────────────────────────────
         theme_box = QGroupBox("Theme")
         tl = QVBoxLayout(theme_box)
-        self.rb_dark    = QRadioButton("Dark  —  Black & Green")
-        self.rb_dark_bw = QRadioButton("Dark  —  Black & White")
-        self.rb_light   = QRadioButton("Light  —  Black & White")
+        self.rb_dark    = QRadioButton("Dark  —  Black && Green")
+        self.rb_dark_bw = QRadioButton("Dark  —  Black && White")
+        self.rb_light   = QRadioButton("Light  —  Black && White")
         self.rb_hc      = QRadioButton("High Contrast")
         self.rb_win95   = QRadioButton("Classic")
+        self.rb_glass   = QRadioButton("macOS Glass  —  frosted && glossy, follows Light / Dark mode")
         bg_theme = QButtonGroup(self)
-        for rb in (self.rb_dark, self.rb_dark_bw, self.rb_light, self.rb_hc, self.rb_win95):
+        for rb in (self.rb_dark, self.rb_dark_bw, self.rb_light, self.rb_hc, self.rb_win95,
+                   self.rb_glass):
             bg_theme.addButton(rb)
             tl.addWidget(rb)
         current = self.manager.settings.get("theme", "win95")
         {
             "dark": self.rb_dark, "dark_bw": self.rb_dark_bw,
             "light": self.rb_light, "hc": self.rb_hc, "win95": self.rb_win95,
+            glass.THEME_KEY: self.rb_glass,
         }.get(current, self.rb_dark).setChecked(True)
         layout.addWidget(theme_box)
 
@@ -1153,6 +1159,8 @@ class GUIView(QWidget):
             hint.setStyleSheet("font-size: 10px; color: #888888;")
             il.addWidget(hint)
             layout.addWidget(icon_box)
+        # ── Glass look (macOS Glass theme) ────────────────────────────────────
+        layout.addWidget(self._glass_settings_box())
 
         # ── Default View ──────────────────────────────────────────────────────
         view_box = QGroupBox("Default View on Startup")
@@ -1179,7 +1187,7 @@ class GUIView(QWidget):
         layout.addWidget(terminal_box)
 
         # ── Protection & Privacy ──────────────────────────────────────────────
-        prot_box = QGroupBox("Protection & Privacy")
+        prot_box = QGroupBox("Protection && Privacy")
         pl = QVBoxLayout(prot_box)
 
         self.chk_run_background = QCheckBox(
@@ -1253,12 +1261,92 @@ class GUIView(QWidget):
         layout.addStretch()
 
         btn_apply = QPushButton("Apply Changes")
+        btn_apply.setObjectName("primaryButton")   # accent-coloured in the glass theme
         btn_apply.setMinimumHeight(32)
         btn_apply.clicked.connect(self._apply_settings_btn)
         layout.addWidget(btn_apply)
 
         scroll.setWidget(tab)
         return scroll
+
+    def _glass_settings_box(self) -> QGroupBox:
+        box = QGroupBox("Glass Look  (macOS Glass theme)")
+        grid = QGridLayout(box)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+        grid.setColumnStretch(1, 1)
+
+        gloss, blur = glass.settings_values(self.manager.settings)
+        native = glass.native_blur_supported()
+
+        # Restyling the whole window is heavy, so slider drags are coalesced.
+        self._glass_timer = QTimer(self)
+        self._glass_timer.setSingleShot(True)
+        self._glass_timer.setInterval(40)
+        self._glass_timer.timeout.connect(self.glass_changed.emit)
+
+        def _row(r: int, title: str, key: str, value: int, left: str, right: str, tip: str):
+            name = QLabel(title)
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(0, 100)
+            slider.setSingleStep(5)
+            slider.setPageStep(10)
+            slider.setValue(value)
+            slider.setToolTip(tip)
+            pct = QLabel(f"{value}%")
+            pct.setMinimumWidth(38)
+            pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            ends = QHBoxLayout()
+            for text, align in ((left, Qt.AlignLeft), (right, Qt.AlignRight)):
+                lbl = QLabel(text)
+                lbl.setStyleSheet("font-size: 10px;")
+                ends.addWidget(lbl, 1, align)
+
+            def _changed(v, k=key, label=pct):
+                label.setText(f"{v}%")
+                self.manager.settings[k] = v
+                self._glass_timer.start()
+
+            slider.valueChanged.connect(_changed)
+            slider.sliderReleased.connect(self._save_settings_quietly)
+            grid.addWidget(name, r, 0)
+            grid.addWidget(slider, r, 1)
+            grid.addWidget(pct, r, 2)
+            grid.addLayout(ends, r + 1, 1)
+            return slider
+
+        self.sl_gloss = _row(0, "Gloss", "glass_gloss", gloss, "Matte", "High shine",
+                             "How shiny buttons, tabs and panels look")
+        self.sl_blur = _row(2, "Blur", "glass_blur", blur, "Clear glass", "Fully frosted",
+                            "How strongly the desktop behind the window is blurred")
+
+        hint = QLabel(
+            "Changes show instantly while the macOS Glass theme is active."
+            if native else
+            "Background blur needs macOS. Here the glass theme uses a solid backdrop."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size: 10px;")
+        grid.addWidget(hint, 4, 0, 1, 3)
+        if not native:
+            self.sl_blur.setEnabled(False)
+
+        btn_reset = QPushButton("Reset")
+        btn_reset.setToolTip("Back to the default gloss and blur")
+        btn_reset.clicked.connect(self._reset_glass)
+        grid.addWidget(btn_reset, 0, 3, 3, 1, Qt.AlignTop)
+        return box
+
+    def _reset_glass(self):
+        self.sl_gloss.setValue(glass.DEFAULT_GLOSS)
+        self.sl_blur.setValue(glass.DEFAULT_BLUR)
+        self._save_settings_quietly()
+
+    def _save_settings_quietly(self):
+        try:
+            self.manager.save()
+        except Exception:
+            pass
 
     # ── refresh ───────────────────────────────────────────────────────────────
 
@@ -1461,6 +1549,8 @@ class GUIView(QWidget):
             t = "light"
         elif self.rb_hc.isChecked():
             t = "hc"
+        elif self.rb_glass.isChecked():
+            t = glass.THEME_KEY
         else:
             t = "win95"
         v    = "terminal" if self.rb_term.isChecked() else "gui"

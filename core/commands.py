@@ -50,8 +50,9 @@ Window control:
   >_/gui:on_[True]                    Switch to GUI mode
   >_/gui:on_[False]                   Return to terminal mode
 
-Themes  (1 = Dark B&G · 2 = Dark B&W · 3 = Light · 4 = High Contrast · 5 = Classic):
-  >_/look=gui:theme_1  through  >_/look=gui:theme_5
+Themes  (1 = Dark B&G · 2 = Dark B&W · 3 = Light · 4 = High Contrast · 5 = Classic
+         6 = macOS Glass):
+  >_/look=gui:theme_1  through  >_/look=gui:theme_6
 
 Type  >_/help:show  to show this reference.\
 """
@@ -70,7 +71,7 @@ COMMAND_HELP = {
     "scan":     "scan\n  Scan the Windows registry and import installed programs.",
     "clear":    "clear\n  Clear all terminal output.",
     "switch":   "switch\n  Switch to the graphical (GUI) view.",
-    "theme":    "theme dark|light\n  Change the colour theme.",
+    "theme":    "theme dark|dark_bw|light|hc|win95|glass\n  Change the colour theme.",
     "exit":     "exit\n  Close AppManager.",
 }
 
@@ -266,7 +267,7 @@ class CommandProcessor:
         return CommandResult(True, "Switching to GUI mode…", action="switch_gui")
 
     def _cmd_theme(self, args: List[str]) -> CommandResult:
-        _valid = ("dark", "dark_bw", "light", "hc", "win95")
+        _valid = ("dark", "dark_bw", "light", "hc", "win95", "glass")
         if not args or args[0].lower() not in _valid:
             return CommandResult(False, f"Usage: theme {'|'.join(_valid)}")
         t = args[0].lower()
@@ -280,7 +281,8 @@ class CommandProcessor:
     # ── >_/ script syntax ─────────────────────────────────────────────────────
 
     # Theme number → key
-    _THEME_NUM = {"1": "dark", "2": "dark_bw", "3": "light", "4": "hc", "5": "win95"}
+    _THEME_NUM = {"1": "dark", "2": "dark_bw", "3": "light", "4": "hc", "5": "win95",
+                  "6": "glass"}
 
     def process_script(self, raw: str) -> CommandResult:
         if not raw.startswith(">_/"):
@@ -383,14 +385,15 @@ class CommandProcessor:
                 return CommandResult(True, "Switching to GUI mode.", action="switch_gui")
             return CommandResult(True, "Already in terminal mode.", action="")
 
-        # ── look=gui:theme_1..5 ───────────────────────────────────────────────
-        m = re.fullmatch(r'look=gui:theme_([1-5])', body, re.IGNORECASE)
+        # ── look=gui:theme_1..6 ───────────────────────────────────────────────
+        m = re.fullmatch(r'look=gui:theme_([1-6])', body, re.IGNORECASE)
         if m:
             t = self._THEME_NUM[m.group(1)]
             self.manager.settings["theme"] = t
             self.manager.save()
             names = {"dark": "Dark B&G", "dark_bw": "Dark B&W",
-                     "light": "Light", "hc": "High Contrast", "win95": "Classic"}
+                     "light": "Light", "hc": "High Contrast", "win95": "Classic",
+                     "glass": "macOS Glass"}
             return CommandResult(True, f"Theme set: {names[t]}", action=f"theme_{t}")
 
         return CommandResult(
