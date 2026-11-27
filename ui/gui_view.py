@@ -272,6 +272,7 @@ class GUIView(QWidget):
     glass_changed      = Signal()            # gloss / blur slider moved (live preview)
     widget_glass_changed = Signal()          # desktop widget gloss / blur slider moved
     uninstall_requested = Signal()           # Settings › Delete ST-SoftwareTool (confirmed)
+    files_open_terminal = Signal(str)        # File Manager › Open in ST Terminal (a folder)
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -345,7 +346,8 @@ class GUIView(QWidget):
                 if hasattr(w, 'wake_now'):
                     w.wake_now()
                 w.wait(5000)
-        for view in (self._svc_view, self._startup_view, self._antivirus_view, self._vpn_view):
+        for view in (self._svc_view, self._startup_view, self._antivirus_view, self._vpn_view,
+                     self._files_view):
             if view is not None:
                 view.cleanup()
 
@@ -362,6 +364,12 @@ class GUIView(QWidget):
         self.tabs.addTab(self._tab_apps(),        "App Manager")
         self.tabs.addTab(self._tab_pinned(),      "Pinned  ★")
         self.tabs.addTab(self._tab_devices(),     "Device Manager")
+        # File Manager: built the first time its tab is opened (keeps start-up fast)
+        self._files_page = QWidget()
+        _fl = QVBoxLayout(self._files_page)
+        _fl.setContentsMargins(0, 0, 0, 0)
+        self._files_view = None
+        self._files_tab_idx = self.tabs.addTab(self._files_page, "File Manager")
         self._task_tab_idx    = self.tabs.addTab(self._tab_tasks(),    "Task Manager")
         self._svc_tab_idx = self._devsettings_tab_idx = self._startup_tab_idx = -1
         if self._svc_view is not None:
@@ -1016,6 +1024,11 @@ class GUIView(QWidget):
             self._hist_count_lbl.setText(f"Entries: {len(hist)}")
 
     def _on_main_tab_changed(self, idx: int):
+        if idx == self._files_tab_idx and self._files_view is None:
+            from ui.file_manager import FileManagerView
+            self._files_view = FileManagerView(self._files_page)
+            self._files_view.open_in_terminal.connect(self.files_open_terminal.emit)
+            self._files_page.layout().addWidget(self._files_view)
         if idx == self._task_tab_idx:
             self._task_sorts_pending = 2
             self._task_worker.activate()

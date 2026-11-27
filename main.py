@@ -31,7 +31,7 @@ _use_bundled_certificates()   # before anything opens a network connection
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QIcon
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from core.manager import AppManager
 from core.commands import CommandProcessor
 from core.updater import start_auto_updates
@@ -259,6 +259,20 @@ def _smoke_test(app, window, seconds: float) -> None:
               f"alpha={w.backdrop.alpha()} gloss={w._gloss} tint={w._tint:.2f}", flush=True)
         if not w.backdrop.is_visible():
             errors.append("Desktop widget: the native blur is not behind it")
+        # A click on the widget opens the app (a drag only moves the widget)
+        from PySide6.QtTest import QTest
+        window.hide()
+        start = w.pos()
+        QTest.mousePress(w, Qt.LeftButton, Qt.NoModifier, QPoint(60, 60))
+        QTest.mouseMove(w, QPoint(90, 75))
+        QTest.mouseRelease(w, Qt.LeftButton, Qt.NoModifier, QPoint(90, 75))
+        dragged = w.pos() != start and window.isHidden()
+        w.move(start)
+        QTest.mouseClick(w, Qt.LeftButton, Qt.NoModifier, QPoint(60, 60))
+        app.processEvents()
+        print(f"SMOKE widget drag_moves={dragged} click_opens={window.isVisible()}", flush=True)
+        if not dragged or not window.isVisible():
+            errors.append("Desktop widget: click should open the app and drag should move it")
         if level is None or level != expected:
             errors.append(f"Desktop widget not at desktop level ({level} != {expected})")
         if not shots_dir:

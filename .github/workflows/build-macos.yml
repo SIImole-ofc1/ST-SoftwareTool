@@ -119,6 +119,11 @@ jobs:
             --macos-app-version="$VERSION" \
             --macos-app-icon=build/ST.icns \
             --macos-app-protected-resource="NSAppleEventsUsageDescription:ST-SoftwareTool reads and changes your Login Items (Advanced Startup) through System Events." \
+            --macos-app-protected-resource="NSDesktopFolderUsageDescription:ST-SoftwareTool's File Manager shows and manages the files on your Desktop." \
+            --macos-app-protected-resource="NSDocumentsFolderUsageDescription:ST-SoftwareTool's File Manager shows and manages your Documents." \
+            --macos-app-protected-resource="NSDownloadsFolderUsageDescription:ST-SoftwareTool's File Manager shows and manages your Downloads." \
+            --macos-app-protected-resource="NSRemovableVolumesUsageDescription:ST-SoftwareTool's File Manager shows the files on USB drives and memory cards." \
+            --macos-app-protected-resource="NSNetworkVolumesUsageDescription:ST-SoftwareTool's File Manager shows the files on network drives." \
             --include-data-dir=assets=assets \
             --include-package-data=certifi \
             --include-data-files=build/tools/yt-dlp_macos=tools/yt-dlp_macos \

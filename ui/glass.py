@@ -322,6 +322,13 @@ def build_qss(gloss: int, blur: int, native: bool, dark: bool | None = None,
                                  text-align: center; border-radius: 5px; min-height: 10px; }}
         QProgressBar::chunk   {{ background: {accent_btn}; border-radius: 5px; }}
 
+        QListView#fmIconView  {{ background: {panel}; border: 1px solid {edge}; border-radius: 8px; }}
+        QToolButton           {{ background: transparent; color: {text}; border: none; border-radius: 6px;
+                                 padding: 3px 6px; }}
+        QToolButton:hover     {{ background: {hover}; }}
+        QToolButton:disabled  {{ color: {text3}; }}
+        QToolButton::menu-indicator {{ image: none; width: 0; }}
+
         QSplitter::handle     {{ background: transparent; }}
         QScrollArea           {{ background: transparent; border: none; }}
         QScrollBar:vertical   {{ background: transparent; width: 10px; margin: 2px; }}

@@ -474,6 +474,17 @@ class TerminalWidget(QWidget):
         self.input_field.setPlaceholderText(
             "type a shell command (ls, cd, brew …)  or  >_/help:show")
 
+    def open_folder(self, folder: str):
+        """Make folder the shell's working folder (File Manager › Open in ST Terminal)."""
+        if self._shell.is_running():
+            self._write("A command is still running — the folder changes when it finishes.",
+                        self._color("warn"))
+            return
+        if os.path.isdir(folder):
+            self._shell.cwd = folder
+            self._write(f"Now in  {self._shell.display_cwd()}", self._color("info"))
+            self._write("")
+
     def _stop_shell(self):
         if self._shell.is_running():
             self._shell_stopped = True

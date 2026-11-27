@@ -476,6 +476,7 @@ class MainWindow(QMainWindow):
         self.gui.glass_changed.connect(self._on_glass_changed)
         self.gui.widget_glass_changed.connect(self._apply_widget_glass)
         self.gui.uninstall_requested.connect(self.uninstall_app)
+        self.gui.files_open_terminal.connect(self._open_terminal_at)
         self.stack.addWidget(self.gui)         # index 1
 
     # ── switching ─────────────────────────────────────────────────────────────
@@ -960,6 +961,11 @@ class MainWindow(QMainWindow):
         if self.gui.last_perf is not None:
             panel.set_perf(self.gui.last_perf)
         panel.set_gpu(self.gui.last_gpu)
+
+    def _open_terminal_at(self, folder: str):
+        """File Manager › Open in ST Terminal: switch to the terminal, already in that folder."""
+        self.terminal.open_folder(folder)
+        self._go_terminal()
 
     def uninstall_app(self):
         """Settings › Delete ST-SoftwareTool (already confirmed): stop everything (the VPN

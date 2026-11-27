@@ -255,7 +255,7 @@ class PerfPanel(QWidget):
 
 class PerfWidget(PerfPanel):
     """The performance card as a desktop widget."""
-    open_requested   = Signal()          # double-click / "Open ST-SoftwareTool"
+    open_requested   = Signal()          # click / "Open ST-SoftwareTool"
     remove_requested = Signal()          # "Remove Widget"
     moved            = Signal(int, int)  # dropped at a new position
 
@@ -268,8 +268,11 @@ class PerfWidget(PerfPanel):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_QuitOnClose, False)   # never keeps the app alive on its own
         self.setToolTip('ST-SoftwareTool Performance\n'
-                        'Drag to move · double-click to open the app · right-click for options')
+                        'Click to open the app · drag to move · right-click for options')
+        self.setCursor(Qt.PointingHandCursor)
         self._drag: Optional[QPoint] = None
+        self._press: Optional[QPoint] = None      # where a left click started
+        self._moved = False
         self.level: Optional[int] = None
         self._blur_setting = 80
         self.backdrop = mac_appkit.BlurBackdrop(
@@ -329,21 +332,36 @@ class PerfWidget(PerfPanel):
 
     # ── mouse ─────────────────────────────────────────────────────────────────
 
+    _CLICK_SLOP = 4      # px a press may travel and still count as a click, not a drag
+
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
-            self._drag = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._press = event.globalPosition().toPoint()
+            self._drag = self._press - self.frameGeometry().topLeft()
+            self._moved = False
 
     def mouseMoveEvent(self, event) -> None:
-        if self._drag is not None and event.buttons() & Qt.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._drag)
+        if self._drag is None or not event.buttons() & Qt.LeftButton:
+            return
+        pos = event.globalPosition().toPoint()
+        if not self._moved and (pos - self._press).manhattanLength() < self._CLICK_SLOP:
+            return
+        self._moved = True
+        self.setCursor(Qt.ClosedHandCursor)
+        self.move(pos - self._drag)
 
     def mouseReleaseEvent(self, event) -> None:
-        if self._drag is not None and event.button() == Qt.LeftButton:
-            self._drag = None
+        if self._drag is None or event.button() != Qt.LeftButton:
+            return
+        self._drag = None
+        self.setCursor(Qt.PointingHandCursor)
+        if self._moved:
             self.moved.emit(self.x(), self.y())
+        else:
+            self.open_requested.emit()          # a click: open (or bring forward) the app
 
     def mouseDoubleClickEvent(self, _event) -> None:
-        self.open_requested.emit()
+        pass   # the first click already opened the app
 
     def contextMenuEvent(self, event) -> None:
         menu = QMenu(self)
