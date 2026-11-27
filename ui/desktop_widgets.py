@@ -107,6 +107,8 @@ class DesktopWidget(QWidget):
     remove_requested = Signal(str)
     edit_requested   = Signal()
     moved            = Signal(str, int, int)
+    lock_toggled     = Signal(bool)            # "Lock Widgets in Place" from the menu
+    opens_app = True                           # a click on the widget opens ST-SoftwareTool
     _CLICK_SLOP = 4
 
     def __init__(self):
@@ -118,11 +120,10 @@ class DesktopWidget(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_QuitOnClose, False)
         self.setFixedSize(*SIZES[self.size_class])
-        self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip(f'{TITLES.get(self.kind, "")}\n'
-                        'Click to open ST-SoftwareTool · drag to move · right-click for options')
         self.level: Optional[int] = None
         self.snap_enabled = True
+        self.locked = False                             # True: can't be dragged
+        self._update_hints()
         self.occupied = lambda: []                      # other widgets' frames (set by the owner)
         self._press: Optional[QPoint] = None
         self._drag: Optional[QPoint] = None
@@ -251,6 +252,17 @@ class DesktopWidget(QWidget):
 
     # mouse -------------------------------------------------------------------
 
+    def set_locked(self, locked: bool) -> None:
+        self.locked = bool(locked)
+        self._update_hints()
+
+    def _update_hints(self) -> None:
+        hints = (['Click to open ST-SoftwareTool'] if self.opens_app else []) + \
+                ([] if self.locked else ['drag to move']) + ['right-click for options']
+        text = ' · '.join(hints)
+        self.setToolTip(f'{TITLES.get(self.kind, "")}\n' + text[:1].upper() + text[1:])
+        self.setCursor(Qt.PointingHandCursor if self.opens_app else Qt.ArrowCursor)
+
     def click(self, pos: QPointF) -> bool:
         """A click inside the widget. Return True if handled (e.g. a button); else the app
         opens."""
@@ -263,7 +275,7 @@ class DesktopWidget(QWidget):
             self._moved = False
 
     def mouseMoveEvent(self, event) -> None:
-        if self._drag is None or not event.buttons() & Qt.LeftButton:
+        if self._drag is None or self.locked or not event.buttons() & Qt.LeftButton:
             return
         pos = event.globalPosition().toPoint()
         if not self._moved and (pos - self._press).manhattanLength() < self._CLICK_SLOP:
@@ -276,13 +288,13 @@ class DesktopWidget(QWidget):
         if self._drag is None or event.button() != Qt.LeftButton:
             return
         self._drag = None
-        self.setCursor(Qt.PointingHandCursor)
+        self._update_hints()
         if self._moved:
             if self.snap_enabled:
                 self.move(snap(self.pos(), (self.width(), self.height()),
                                self.occupied() + apple_widget_rects()))
             self.moved.emit(self.kind, self.x(), self.y())
-        elif not self.click(event.position()):
+        elif not self.click(event.position()) and self.opens_app:
             self.open_requested.emit()
 
     def mouseDoubleClickEvent(self, _event) -> None:
@@ -292,11 +304,16 @@ class DesktopWidget(QWidget):
         menu = QMenu(self)
         open_action = menu.addAction('Open ST-SoftwareTool')
         edit_action = menu.addAction('Edit Widgets…')
+        lock_action = menu.addAction('Lock Widgets in Place')
+        lock_action.setCheckable(True)
+        lock_action.setChecked(self.locked)
         self.extra_menu(menu)
         menu.addSeparator()
         remove_action = menu.addAction('Remove Widget')
         chosen = menu.exec(event.globalPos())
-        if chosen is open_action:
+        if chosen is lock_action:
+            self.lock_toggled.emit(lock_action.isChecked())
+        elif chosen is open_action:
             self.open_requested.emit()
         elif chosen is edit_action:
             self.edit_requested.emit()
@@ -573,6 +590,7 @@ class NetworkWidget(DesktopWidget):
 class MusicWidget(DesktopWidget):
     kind = 'music'
     size_class = 'medium'
+    opens_app = False                         # clicks are for the player, not for opening ST
     control_requested = Signal(str, str)      # action, app
     volume_requested = Signal(int)            # 0–100, or -1 to toggle mute
 

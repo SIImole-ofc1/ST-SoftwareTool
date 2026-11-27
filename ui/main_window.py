@@ -968,6 +968,7 @@ class MainWindow(QMainWindow):
             w.open_requested.connect(self._tray_open)
             w.remove_requested.connect(lambda k: self._set_widget(k, False))
             w.edit_requested.connect(self._edit_widgets)
+            w.lock_toggled.connect(self._set_widgets_locked)
             w.moved.connect(self._on_widget_moved)
             w.occupied = lambda me=w: [o.frameGeometry() for o in self._widgets.values()
                                        if o is not me and o.isVisible()]
@@ -1011,6 +1012,7 @@ class MainWindow(QMainWindow):
         """Apply Settings › Widgets & Menu Bar to one widget."""
         s = self.manager.settings
         w.snap_enabled = bool(s.get('widget_snap', True))
+        w.set_locked(bool(s.get('widgets_locked', False)))
         if w.kind == 'performance':
             w.configure(s.get('widget_perf_rows', ['cpu', 'ram', 'gpu', 'ssd']),
                         s.get('widget_perf_net', True))
@@ -1101,6 +1103,17 @@ class MainWindow(QMainWindow):
         from core import media
         work = media.toggle_mute if level < 0 else (lambda: media.set_volume(level))
         call_async(self, work, lambda _r: QTimer.singleShot(100, self._refresh_music))
+
+    def _set_widgets_locked(self, locked: bool):
+        """A widget's "Lock Widgets in Place": applies to all of them."""
+        self.manager.settings['widgets_locked'] = bool(locked)
+        try:
+            self.manager.save()
+        except Exception:
+            pass
+        for w in self._widgets.values():
+            w.set_locked(locked)
+        self.gui.sync_widget_lock(locked)
 
     def _edit_widgets(self):
         """A widget's "Edit Widgets…": open Settings at the widgets section."""

@@ -1521,6 +1521,10 @@ class GUIView(QWidget):
         self.chk_widget_snap.setChecked(bool(s.get('widget_snap', True)))
         self.chk_widget_snap.toggled.connect(changed(lambda: s.__setitem__('widget_snap', self.chk_widget_snap.isChecked())))
         v.addWidget(self.chk_widget_snap)
+        self.chk_widget_lock = QCheckBox("Lock widgets in place (they can't be dragged)")
+        self.chk_widget_lock.setChecked(bool(s.get('widgets_locked', False)))
+        self.chk_widget_lock.toggled.connect(changed(lambda: s.__setitem__('widgets_locked', self.chk_widget_lock.isChecked())))
+        v.addWidget(self.chk_widget_lock)
 
         heading("Performance widget shows")
         rows = s.get('widget_perf_rows', ['cpu', 'ram', 'gpu', 'ssd'])
@@ -1591,6 +1595,14 @@ class GUIView(QWidget):
         if c is not None and c.isChecked() != on:
             c.blockSignals(True)
             c.setChecked(on)
+            c.blockSignals(False)
+
+    def sync_widget_lock(self, locked: bool):
+        """Keep Settings in step when a widget's menu locks / unlocks them."""
+        c = getattr(self, 'chk_widget_lock', None)
+        if c is not None and c.isChecked() != locked:
+            c.blockSignals(True)
+            c.setChecked(locked)
             c.blockSignals(False)
 
     def show_widget_settings(self):
