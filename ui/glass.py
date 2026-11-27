@@ -4,8 +4,9 @@ macOS Glass theme — a frosted, glossy look made for Mac users.
 Two parts:
 
 * ``MacBackdrop`` puts a native ``NSVisualEffectView`` (the blur macOS uses for
-  sidebars and Control Center) behind the Qt window. It talks to the
-  Objective-C runtime through ctypes, so no extra package is needed.
+  sidebars and Control Center) behind the Qt window, through
+  ``core.mac_appkit`` (ctypes, so no extra package is needed). The desktop
+  Performance widget uses the same blur, with its own gloss / blur settings.
 * ``build_qss()`` builds the stylesheet. Two user settings drive it:
     - gloss (0–100): how strong the light highlights on buttons, tabs and
       panels are — 0 is flat and matte, 100 is a shiny, Aqua-style split shine.
@@ -17,30 +18,39 @@ draws the same glossy panels over a solid gradient backdrop instead.
 """
 from __future__ import annotations
 
-import ctypes
-import ctypes.util
-import platform
 import sys
-from ctypes import Structure, c_bool, c_char_p, c_double, c_long, c_ulong, c_void_p
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 
+from core import mac_appkit
+
 IS_MAC = sys.platform == "darwin"
 
 THEME_KEY     = "glass"
-DEFAULT_GLOSS = 60
+DEFAULT_GLOSS = 60          # app window (macOS Glass theme)
 DEFAULT_BLUR  = 70
+WIDGET_DEFAULT_GLOSS = 55   # desktop Performance widget
+WIDGET_DEFAULT_BLUR  = 80
+
+
+def _pct(settings: dict, key: str, default: int) -> int:
+    try:
+        return max(0, min(100, int(settings.get(key, default))))
+    except (TypeError, ValueError):
+        return default
 
 
 def settings_values(settings: dict) -> tuple[int, int]:
-    """(gloss, blur) from the app settings, clamped to 0–100."""
-    def _get(key, default):
-        try:
-            return max(0, min(100, int(settings.get(key, default))))
-        except (TypeError, ValueError):
-            return default
-    return _get("glass_gloss", DEFAULT_GLOSS), _get("glass_blur", DEFAULT_BLUR)
+    """(gloss, blur) for the app window, clamped to 0–100."""
+    return (_pct(settings, "glass_gloss", DEFAULT_GLOSS),
+            _pct(settings, "glass_blur", DEFAULT_BLUR))
+
+
+def widget_values(settings: dict) -> tuple[int, int]:
+    """(gloss, blur) for the desktop Performance widget, clamped to 0–100."""
+    return (_pct(settings, "widget_gloss", WIDGET_DEFAULT_GLOSS),
+            _pct(settings, "widget_blur", WIDGET_DEFAULT_BLUR))
 
 
 def is_dark() -> bool:
@@ -51,160 +61,62 @@ def is_dark() -> bool:
         return True
 
 
-# ── Objective-C runtime access (macOS only) ──────────────────────────────────
-
-class _NSRect(Structure):
-    _fields_ = [("x", c_double), ("y", c_double), ("w", c_double), ("h", c_double)]
-
-
-class _ObjC:
-    """Minimal objc_msgSend wrapper. Every call gets an exact C prototype, which
-    arm64 needs (objc_msgSend must never be called as a variadic function)."""
-
-    def __init__(self):
-        self._lib = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc") or "libobjc.dylib")
-        ctypes.cdll.LoadLibrary("/System/Library/Frameworks/AppKit.framework/AppKit")
-        self._lib.objc_getClass.restype = c_void_p
-        self._lib.objc_getClass.argtypes = [c_char_p]
-        self._lib.sel_registerName.restype = c_void_p
-        self._lib.sel_registerName.argtypes = [c_char_p]
-        self._send = ctypes.cast(self._lib.objc_msgSend, c_void_p).value
-        # Intel Macs return large structs (NSRect) through objc_msgSend_stret.
-        self._send_stret = (ctypes.cast(self._lib.objc_msgSend_stret, c_void_p).value
-                            if platform.machine() == "x86_64" else self._send)
-        self._protos: dict = {}
-
-    def cls(self, name: str):
-        return self._lib.objc_getClass(name.encode())
-
-    def __call__(self, obj, sel: str, *args, restype=c_void_p, argtypes=()):
-        addr = self._send_stret if restype is _NSRect else self._send
-        key = (addr, restype, tuple(argtypes))
-        fn = self._protos.get(key)
-        if fn is None:
-            fn = ctypes.CFUNCTYPE(restype, c_void_p, c_void_p, *argtypes)(addr)
-            self._protos[key] = fn
-        return fn(obj, self._lib.sel_registerName(sel.encode()), *args)
-
-    def nsstring(self, text: str):
-        return self(self.cls("NSString"), "stringWithUTF8String:",
-                    text.encode(), argtypes=[c_char_p])
-
-
-_objc = None
-
-
-def _get_objc():
-    global _objc
-    if _objc is None and IS_MAC:
-        try:
-            o = _ObjC()
-            if o.cls("NSVisualEffectView"):
-                _objc = o
-        except Exception:
-            _objc = None
-    return _objc
-
+# ── native blur (macOS) ──────────────────────────────────────────────────────
 
 def native_blur_supported() -> bool:
-    return _get_objc() is not None
+    return mac_appkit.blur_supported()
 
 
 def system_accent(dark: bool) -> str:
     """The user's macOS accent colour (System Settings › Appearance), or Apple blue."""
-    fallback = "#0a84ff" if dark else "#007aff"
-    o = _get_objc()
-    if o is None:
-        return fallback
-    try:
-        color = o(o.cls("NSColor"), "controlAccentColor")
-        srgb = o(o.cls("NSColorSpace"), "sRGBColorSpace")
-        color = o(color, "colorUsingColorSpace:", srgb, argtypes=[c_void_p])
-        if not color:
-            return fallback
-        rgb = [o(color, sel, restype=c_double) for sel in
-               ("redComponent", "greenComponent", "blueComponent")]
-        return "#" + "".join(f"{max(0, min(255, round(c * 255))):02x}" for c in rgb)
-    except Exception:
-        return fallback
+    return mac_appkit.accent_color() or ("#0a84ff" if dark else "#007aff")
 
 
 class MacBackdrop:
-    """Native frosted-glass backdrop behind a top-level Qt window (macOS)."""
-
-    _MATERIAL_UNDER_WINDOW = 21   # NSVisualEffectMaterialUnderWindowBackground
-    _BEHIND_WINDOW         = 0    # NSVisualEffectBlendingModeBehindWindow
-    _STATE_ACTIVE          = 1    # stay frosted when the window is in the background
-    _SIZABLE               = 2 | 16  # NSViewWidthSizable | NSViewHeightSizable
-    _BELOW                 = -1   # NSWindowBelow
+    """Frosted glass behind the main window (the macOS Glass theme)."""
 
     def __init__(self, widget):
         self._widget = widget
-        self._view   = None
-        self._window = None
-        self._failed = False
+        self._blur = mac_appkit.BlurBackdrop(material="window")
 
     @property
     def attached(self) -> bool:
-        return self._view is not None
+        return self._blur.attached
+
+    @property
+    def native(self) -> mac_appkit.BlurBackdrop:
+        return self._blur
 
     def apply(self, enabled: bool, blur: int, dark: bool) -> bool:
-        """Show/hide the backdrop. Returns True when native blur is active."""
-        o = _get_objc()
-        if o is None:
-            return False
+        """Show / hide the backdrop. Returns True when native blur is active."""
         if not enabled:
-            if self._view:
-                o(self._view, "setHidden:", True, argtypes=[c_bool])
-                o(self._window, "setTitlebarAppearsTransparent:", False, argtypes=[c_bool])
+            self._blur.update(False, transparent_titlebar=False)
             return False
-        if not self._ensure(o):
+        if not self._blur.attach(int(self._widget.winId())):
             return False
-        try:
-            name = "NSAppearanceNameDarkAqua" if dark else "NSAppearanceNameAqua"
-            appearance = o(o.cls("NSAppearance"), "appearanceNamed:",
-                           o.nsstring(name), argtypes=[c_void_p])
-            o(self._view, "setAppearance:", appearance, argtypes=[c_void_p])
-            # Fading the blur view out mixes the frosted image with the clear
-            # desktop behind it, which reads as "less blur".
-            o(self._view, "setAlphaValue:", blur_alpha(blur), argtypes=[c_double])
-            o(self._view, "setHidden:", False, argtypes=[c_bool])
-            o(self._window, "setTitlebarAppearsTransparent:", True, argtypes=[c_bool])
-            return True
-        except Exception as exc:
-            print(f"[glass] backdrop update failed: {exc}", file=sys.stderr)
-            return False
+        return self._blur.update(True, blur_alpha(blur), dark, transparent_titlebar=True)
 
-    def _ensure(self, o) -> bool:
-        if self._view:
-            return True
-        if self._failed:
-            return False
-        try:
-            nsview = int(self._widget.winId())
-            window = o(nsview, "window")
-            if not window:
-                return False   # not on screen yet — called again from showEvent
-            content = o(window, "contentView")
-            frame   = o(content, "superview")
-            bounds  = o(frame, "bounds", restype=_NSRect)
-            view = o(o(o.cls("NSVisualEffectView"), "alloc"), "initWithFrame:",
-                     bounds, argtypes=[_NSRect])
-            o(view, "setAutoresizingMask:", self._SIZABLE, argtypes=[c_ulong])
-            o(view, "setBlendingMode:", self._BEHIND_WINDOW, argtypes=[c_long])
-            o(view, "setMaterial:", self._MATERIAL_UNDER_WINDOW, argtypes=[c_long])
-            o(view, "setState:", self._STATE_ACTIVE, argtypes=[c_long])
-            o(frame, "addSubview:positioned:relativeTo:", view, self._BELOW, content,
-              argtypes=[c_void_p, c_long, c_void_p])
-            o(window, "setOpaque:", False, argtypes=[c_bool])
-            o(window, "setBackgroundColor:", o(o.cls("NSColor"), "clearColor"),
-              argtypes=[c_void_p])
-            self._view, self._window = view, window
-            return True
-        except Exception as exc:
-            self._failed = True
-            print(f"[glass] native blur unavailable: {exc}", file=sys.stderr)
-            return False
+
+def rounded_mask_png(radius: float, scale: float = 2.0) -> bytes:
+    """A small 9-slice PNG of a rounded rectangle, used to give the native blur round
+    corners (NSVisualEffectView.maskImage)."""
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF
+    from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath
+    side = int((2 * radius + 2) * scale)
+    img = QImage(side, side, QImage.Format_ARGB32_Premultiplied)
+    img.fill(0)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing)
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(0, 0, side, side), radius * scale, radius * scale)
+    p.fillPath(path, QColor(0, 0, 0))
+    p.end()
+    data = QByteArray()
+    buf = QBuffer(data)
+    buf.open(QIODevice.WriteOnly)
+    img.save(buf, "PNG")
+    buf.close()
+    return bytes(data)
 
 
 # ── palettes ─────────────────────────────────────────────────────────────────

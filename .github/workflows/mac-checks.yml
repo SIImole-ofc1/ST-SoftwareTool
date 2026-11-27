@@ -40,6 +40,12 @@ jobs:
           ST_SMOKE_TEST=14 ST_SMOKE_SHOTS=build/shots ST_SMOKE_WIDGET=1
           ST_SMOKE_ICON=dark ST_SMOKE_ICON_SHOT=build/shots/dock-dark-icon.png python main.py
 
+      - name: Screenshots in the macOS Glass theme (window and desktop widget)
+        if: always()
+        run: >-
+          ST_SMOKE_TEST=14 ST_SMOKE_SHOTS=build/shots/glass ST_SMOKE_WIDGET=1
+          ST_SMOKE_THEME=glass python main.py
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

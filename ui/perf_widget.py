@@ -13,7 +13,8 @@ import os
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import (QColor, QFont, QGuiApplication, QLinearGradient, QPainter,
+                           QPainterPath, QPen, QPixmap)
 from PySide6.QtWidgets import QMenu, QWidget
 
 from core import mac_appkit
@@ -60,6 +61,15 @@ def is_dark() -> bool:
         return True
 
 
+def _mask_png() -> Optional[bytes]:
+    """Rounded-corner mask so the native blur matches the card's shape."""
+    try:
+        from ui.glass import rounded_mask_png
+        return rounded_mask_png(_RADIUS)
+    except Exception:
+        return None
+
+
 def pin_to_desktop(widget: QWidget) -> Optional[int]:
     """macOS: put the widget's window at desktop level. Returns the level now in effect."""
     return mac_appkit.pin_to_desktop(int(widget.winId()))
@@ -78,6 +88,10 @@ class PerfPanel(QWidget):
         self._gpu: Optional[float] = None
         self._disk: Optional[float] = _disk_percent()
         self._up = self._down = 0.0
+        # Glass look (desktop widget): None = the plain card; else gloss 0–1 and how
+        # opaque the card's tint is over the native blur behind it.
+        self._gloss: Optional[float] = None
+        self._tint: float = 1.0
 
         logo = QPixmap(_LOGO)
         self._logo = (logo.scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -134,6 +148,8 @@ class PerfPanel(QWidget):
     def paintEvent(self, _event) -> None:
         dark = is_dark()
         bg     = QColor(28, 28, 30, 218) if dark else QColor(246, 246, 248, 228)
+        if self._gloss is not None:
+            bg.setAlpha(round(255 * self._tint))
         border = QColor(255, 255, 255, 30) if dark else QColor(0, 0, 0, 28)
         text   = QColor('#f5f5f7') if dark else QColor('#1d1d1f')
         sub    = QColor(235, 235, 245, 160) if dark else QColor(60, 60, 67, 165)
@@ -146,8 +162,11 @@ class PerfPanel(QWidget):
             shape.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
                                  _RADIUS, _RADIUS)
             p.fillPath(shape, bg)
-            p.setPen(border)
-            p.drawPath(shape)
+            if self._gloss:
+                self._paint_gloss(p, shape, dark)
+            else:
+                p.setPen(border)
+                p.drawPath(shape)
 
         base = QFont(self.font())
         x, y, right = _PAD, _PAD, _W - _PAD
@@ -187,7 +206,7 @@ class PerfPanel(QWidget):
             p.drawRoundedRect(bar, 4, 4)
             if value is not None and value > 0:
                 fill = QRectF(bar.x(), bar.y(), max(8.0, bar.width() * min(value, 100.0) / 100.0), 8)
-                p.setBrush(QColor(_ACCENT[name]))
+                p.setBrush(self._bar_brush(QColor(_ACCENT[name]), fill))
                 p.drawRoundedRect(fill, 4, 4)
             p.setFont(value_font)
             p.setPen(text)
@@ -201,6 +220,37 @@ class PerfPanel(QWidget):
         p.drawText(QRectF(x, y, right - x, _NET_H), Qt.AlignVCenter | Qt.AlignLeft,
                    f'↑ {_fmt_rate(self._up)}     ↓ {_fmt_rate(self._down)}')
         p.end()
+
+
+    def _paint_gloss(self, p: QPainter, shape: QPainterPath, dark: bool) -> None:
+        """Glossy glass: a soft sheen over the top half and a bright specular rim."""
+        g = self._gloss or 0.0
+        h = float(self.height())
+        sheen = QLinearGradient(0, 0, 0, h * 0.62)
+        sheen.setColorAt(0.0, QColor(255, 255, 255, round((60 if dark else 150) * g)))
+        sheen.setColorAt(0.45, QColor(255, 255, 255, round((16 if dark else 50) * g)))
+        sheen.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.fillPath(shape, sheen)
+        rim = QLinearGradient(0, 0, 0, h)
+        rim.setColorAt(0.0, QColor(255, 255, 255, round(70 + 150 * g)))
+        rim.setColorAt(0.35, QColor(255, 255, 255, round(26 + 30 * g) if dark else round(60 * g)))
+        rim.setColorAt(1.0, QColor(255, 255, 255, 22) if dark else QColor(0, 0, 0, 30))
+        p.setPen(QPen(rim, 1.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawPath(shape)
+
+    def _bar_brush(self, color: QColor, rect: QRectF):
+        """Bar fill: flat, or with a glossy highlight on its top half."""
+        g = self._gloss or 0.0
+        if g <= 0.02:
+            return color
+        grad = QLinearGradient(0, rect.top(), 0, rect.bottom())
+        top = QColor(color).lighter(100 + round(45 * g))
+        grad.setColorAt(0.0, top)
+        grad.setColorAt(0.5, QColor(color).lighter(100 + round(12 * g)))
+        grad.setColorAt(0.51, color)
+        grad.setColorAt(1.0, QColor(color).darker(100 + round(10 * g)))
+        return grad
 
 
 class PerfWidget(PerfPanel):
@@ -221,6 +271,9 @@ class PerfWidget(PerfPanel):
                         'Drag to move · double-click to open the app · right-click for options')
         self._drag: Optional[QPoint] = None
         self.level: Optional[int] = None
+        self._blur_setting = 80
+        self.backdrop = mac_appkit.BlurBackdrop(
+            material='hud', mask_png=_mask_png(), cap_inset=_RADIUS + 1)
 
     def dispose(self) -> None:
         """Remove the widget (switched off, or the app quits)."""
@@ -244,6 +297,35 @@ class PerfWidget(PerfPanel):
 
     def _pin(self) -> None:
         self.level = pin_to_desktop(self)
+        if self._gloss is not None:
+            self._apply_backdrop()
+
+    # ── glass look ────────────────────────────────────────────────────────────
+
+    def set_glass(self, gloss: int, blur: int) -> None:
+        """Gloss and blur (0–100) from Settings › Glass Look. Live while shown."""
+        self._gloss = max(0, min(100, int(gloss))) / 100.0
+        self._blur_setting = max(0, min(100, int(blur)))
+        if self.isVisible():
+            self._apply_backdrop()
+        self._refresh_tint()
+
+    def _apply_backdrop(self) -> None:
+        from ui import glass
+        if self.backdrop.attach(int(self.winId())):
+            # dark=None: the blur follows the system's light / dark appearance
+            self.backdrop.update(True, glass.blur_alpha(self._blur_setting), dark=None)
+        self._refresh_tint()
+
+    def _refresh_tint(self) -> None:
+        """Over the native blur the card is a light tint — more blur, thinner tint, as
+        macOS widgets do. Without the blur it stays the solid card it always was."""
+        from ui import glass
+        if self.backdrop.attached:
+            self._tint = 0.28 + 0.58 * (1.0 - glass.blur_alpha(self._blur_setting))
+        else:
+            self._tint = 218 / 255
+        self.update()
 
     # ── mouse ─────────────────────────────────────────────────────────────────
 

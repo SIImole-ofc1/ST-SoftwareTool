@@ -270,6 +270,7 @@ class GUIView(QWidget):
     settings_changed   = Signal()            # protection / privacy settings changed
     perf_widget_toggled = Signal(bool)       # macOS: desktop Performance widget on / off
     glass_changed      = Signal()            # gloss / blur slider moved (live preview)
+    widget_glass_changed = Signal()          # desktop widget gloss / blur slider moved
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -1270,23 +1271,39 @@ class GUIView(QWidget):
         return scroll
 
     def _glass_settings_box(self) -> QGroupBox:
-        box = QGroupBox("Glass Look  (macOS Glass theme)")
+        """Gloss / blur sliders for the app window (macOS Glass theme) and, on macOS,
+        the desktop Performance widget. Both update live and are saved right away."""
+        box = QGroupBox("Glass Look")
         grid = QGridLayout(box)
         grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(8)
         grid.setColumnStretch(1, 1)
-
-        gloss, blur = glass.settings_values(self.manager.settings)
         native = glass.native_blur_supported()
 
         # Restyling the whole window is heavy, so slider drags are coalesced.
-        self._glass_timer = QTimer(self)
-        self._glass_timer.setSingleShot(True)
-        self._glass_timer.setInterval(40)
-        self._glass_timer.timeout.connect(self.glass_changed.emit)
+        def _timer(signal):
+            t = QTimer(self)
+            t.setSingleShot(True)
+            t.setInterval(40)
+            t.timeout.connect(signal.emit)
+            return t
+        self._glass_timer = _timer(self.glass_changed)
+        self._widget_glass_timer = _timer(self.widget_glass_changed)
 
-        def _row(r: int, title: str, key: str, value: int, left: str, right: str, tip: str):
-            name = QLabel(title)
+        row = [0]
+
+        def _heading(text: str, reset):
+            lbl = QLabel(text)
+            lbl.setStyleSheet("font-weight: 600;")
+            grid.addWidget(lbl, row[0], 0, 1, 3)
+            btn = QPushButton("Reset")
+            btn.setToolTip("Back to the default gloss and blur")
+            btn.clicked.connect(reset)
+            grid.addWidget(btn, row[0], 3)
+            row[0] += 1
+
+        def _slider(title, key, value, left, right, tip, timer):
+            r = row[0]
             slider = QSlider(Qt.Horizontal)
             slider.setRange(0, 100)
             slider.setSingleStep(5)
@@ -1305,41 +1322,64 @@ class GUIView(QWidget):
             def _changed(v, k=key, label=pct):
                 label.setText(f"{v}%")
                 self.manager.settings[k] = v
-                self._glass_timer.start()
+                timer.start()
 
             slider.valueChanged.connect(_changed)
             slider.sliderReleased.connect(self._save_settings_quietly)
-            grid.addWidget(name, r, 0)
+            grid.addWidget(QLabel(title), r, 0)
             grid.addWidget(slider, r, 1)
             grid.addWidget(pct, r, 2)
             grid.addLayout(ends, r + 1, 1)
+            row[0] += 2
             return slider
 
-        self.sl_gloss = _row(0, "Gloss", "glass_gloss", gloss, "Matte", "High shine",
-                             "How shiny buttons, tabs and panels look")
-        self.sl_blur = _row(2, "Blur", "glass_blur", blur, "Clear glass", "Fully frosted",
-                            "How strongly the desktop behind the window is blurred")
+        def _hint(text: str):
+            lbl = QLabel(text)
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet("font-size: 10px;")
+            grid.addWidget(lbl, row[0], 0, 1, 4)
+            row[0] += 1
 
-        hint = QLabel(
-            "Changes show instantly while the macOS Glass theme is active."
-            if native else
-            "Background blur needs macOS. Here the glass theme uses a solid backdrop."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("font-size: 10px;")
-        grid.addWidget(hint, 4, 0, 1, 3)
+        # App window
+        gloss, blur = glass.settings_values(self.manager.settings)
+        _heading("App window  —  macOS Glass theme", self._reset_glass)
+        self.sl_gloss = _slider("Gloss", "glass_gloss", gloss, "Matte", "High shine",
+                                "How shiny buttons, tabs and panels look", self._glass_timer)
+        self.sl_blur = _slider("Blur", "glass_blur", blur, "Clear glass", "Fully frosted",
+                               "How strongly the desktop behind the window is blurred",
+                               self._glass_timer)
+        _hint("Changes show instantly while the macOS Glass theme is active."
+              if native else
+              "Background blur needs macOS. Here the glass theme uses a solid backdrop.")
         if not native:
             self.sl_blur.setEnabled(False)
 
-        btn_reset = QPushButton("Reset")
-        btn_reset.setToolTip("Back to the default gloss and blur")
-        btn_reset.clicked.connect(self._reset_glass)
-        grid.addWidget(btn_reset, 0, 3, 3, 1, Qt.AlignTop)
+        # Desktop Performance widget (macOS only)
+        self.sl_widget_gloss = self.sl_widget_blur = None
+        if IS_MAC:
+            grid.setRowMinimumHeight(row[0], 8)
+            row[0] += 1
+            wg, wb = glass.widget_values(self.manager.settings)
+            _heading("Desktop widget  —  Performance", self._reset_widget_glass)
+            self.sl_widget_gloss = _slider(
+                "Gloss", "widget_gloss", wg, "Matte", "High shine",
+                "How shiny the desktop widget's card and bars look", self._widget_glass_timer)
+            self.sl_widget_blur = _slider(
+                "Blur", "widget_blur", wb, "Clear glass", "Fully frosted",
+                "How strongly the wallpaper behind the widget is blurred",
+                self._widget_glass_timer)
+            _hint("Turn the widget on in Device Manager › Performance. "
+                  "It follows your Mac's Light / Dark mode.")
         return box
 
     def _reset_glass(self):
         self.sl_gloss.setValue(glass.DEFAULT_GLOSS)
         self.sl_blur.setValue(glass.DEFAULT_BLUR)
+        self._save_settings_quietly()
+
+    def _reset_widget_glass(self):
+        self.sl_widget_gloss.setValue(glass.WIDGET_DEFAULT_GLOSS)
+        self.sl_widget_blur.setValue(glass.WIDGET_DEFAULT_BLUR)
         self._save_settings_quietly()
 
     def _save_settings_quietly(self):

@@ -74,7 +74,24 @@ def _smoke_test(app, window, seconds: float) -> None:
         sys.__excepthook__(etype, value, tb)
     sys.excepthook = hook
 
+    # ST_SMOKE_THEME=<key> (e.g. glass): run the checks and screenshots in that theme
+    smoke_theme = os.environ.get("ST_SMOKE_THEME")
+    if smoke_theme:
+        window._set_theme(smoke_theme)
+
+    def check_glass():
+        from ui import glass
+        if window.manager.settings.get("theme") != glass.THEME_KEY:
+            return
+        native = window._backdrop.native
+        print(f"SMOKE glass supported={glass.native_blur_supported()} "
+              f"attached={native.attached} visible={native.is_visible()} "
+              f"alpha={native.alpha()}", flush=True)
+        if glass.native_blur_supported() and not native.is_visible():
+            errors.append("macOS Glass theme: the native blur is not behind the window")
+
     def visit_tabs():
+        check_glass()
         from PySide6.QtGui import QFontInfo
         from core.osinfo import mac_app_bundle, own_executable
         print(f"SMOKE executable={sys.executable!r} own={own_executable()!r} "
@@ -178,6 +195,10 @@ def _smoke_test(app, window, seconds: float) -> None:
         level = pin_to_desktop(w)
         print(f"SMOKE widget level={level} expected={expected} size={w.width()}x{w.height()}",
               flush=True)
+        print(f"SMOKE widget blur attached={w.backdrop.attached} visible={w.backdrop.is_visible()} "
+              f"alpha={w.backdrop.alpha()} gloss={w._gloss} tint={w._tint:.2f}", flush=True)
+        if not w.backdrop.is_visible():
+            errors.append("Desktop widget: the native blur is not behind it")
         if level is None or level != expected:
             errors.append(f"Desktop widget not at desktop level ({level} != {expected})")
         if not shots_dir:

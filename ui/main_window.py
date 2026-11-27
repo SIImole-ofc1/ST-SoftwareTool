@@ -473,6 +473,7 @@ class MainWindow(QMainWindow):
         self.gui.settings_changed.connect(self._on_settings_changed)
         self.gui.perf_widget_toggled.connect(self._set_perf_widget)
         self.gui.glass_changed.connect(self._on_glass_changed)
+        self.gui.widget_glass_changed.connect(self._apply_widget_glass)
         self.stack.addWidget(self.gui)         # index 1
 
     # ── switching ─────────────────────────────────────────────────────────────
@@ -943,6 +944,7 @@ class MainWindow(QMainWindow):
             w.moved.connect(self._on_perf_widget_moved)
             self._seed_perf(w)
             w.place(self.manager.settings.get('perf_widget_pos'))
+            w.set_glass(*glass.widget_values(self.manager.settings))
             self._perf_widget = w
             w.show()
         elif not on and self._perf_widget is not None:
@@ -955,6 +957,11 @@ class MainWindow(QMainWindow):
         if self.gui.last_perf is not None:
             panel.set_perf(self.gui.last_perf)
         panel.set_gpu(self.gui.last_gpu)
+
+    def _apply_widget_glass(self):
+        """Settings › Glass Look widget sliders moved — restyle the widget live."""
+        if self._perf_widget is not None:
+            self._perf_widget.set_glass(*glass.widget_values(self.manager.settings))
 
     def _on_perf_widget_moved(self, x: int, y: int):
         self.manager.settings['perf_widget_pos'] = [x, y]
