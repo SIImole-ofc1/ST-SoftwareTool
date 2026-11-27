@@ -8,7 +8,7 @@
 ;      Output: dist_nuitka\installer\ST-SoftwareTool-Setup.exe
 
 #define AppName      "ST-SoftwareTool"
-#define AppVersion   "1.6.29"
+#define AppVersion   "1.7.29"
 #define AppPublisher "SIImole"
 #define AppURL       "https://st-softwaretool.pages.dev"
 #define AppExeName   "ST.exe"
