@@ -1161,9 +1161,12 @@ class GUIView(QWidget):
             "light": self.rb_light, "hc": self.rb_hc, "win95": self.rb_win95,
             glass.THEME_KEY: self.rb_glass,
         }.get(current, self.rb_dark).setChecked(True)
+        # The two go together: Performance mode turns animations off; ticking Animations
+        # again leaves Performance mode. Both can always be clicked.
         self.chk_animations = QCheckBox(
             "Animations  —  sections glide in, rows pop in as you scroll, smooth wheel")
-        self.chk_animations.setChecked(bool(self.manager.settings.get("animations", True)))
+        self.chk_animations.setChecked(bool(self.manager.settings.get("animations", True))
+                                       and not self.manager.settings.get("performance_mode", False))
         self.chk_animations.toggled.connect(self._toggle_animations)
         tl.addWidget(self.chk_animations)
         self.chk_performance = QCheckBox(
@@ -1172,7 +1175,6 @@ class GUIView(QWidget):
         self.chk_performance.setChecked(bool(self.manager.settings.get("performance_mode", False)))
         self.chk_performance.toggled.connect(self._toggle_performance)
         tl.addWidget(self.chk_performance)
-        self.chk_animations.setEnabled(not self.chk_performance.isChecked())
         layout.addWidget(theme_box)
 
         # ── App Icon (macOS) ──────────────────────────────────────────────────
@@ -1470,24 +1472,34 @@ class GUIView(QWidget):
         scroll_fx.install_all(self)
         nav_fx.install_all(self)
 
-    def _toggle_animations(self, on: bool):
+    def _apply_motion(self):
         from ui import nav_fx, perf_mode, scroll_fx
-        self.manager.settings["animations"] = bool(on)
-        effective = perf_mode.animations_on(self.manager.settings)
-        scroll_fx.set_enabled(effective)
-        nav_fx.set_enabled(effective)
-        self._save_settings_quietly()
-
-    def _toggle_performance(self, on: bool):
-        from ui import nav_fx, perf_mode, scroll_fx
-        self.manager.settings["performance_mode"] = bool(on)
         perf_mode.load(self.manager.settings)
         effective = perf_mode.animations_on(self.manager.settings)
         scroll_fx.set_enabled(effective)
         nav_fx.set_enabled(effective)
-        self.chk_animations.setEnabled(not on)
         self._save_settings_quietly()
-        self.performance_changed.emit(bool(on))
+        self.performance_changed.emit(perf_mode.ON)
+
+    @staticmethod
+    def _set_quietly(box, on: bool):
+        box.blockSignals(True)
+        box.setChecked(on)
+        box.blockSignals(False)
+
+    def _toggle_animations(self, on: bool):
+        self.manager.settings["animations"] = bool(on)
+        if on and self.manager.settings.get("performance_mode"):
+            self.manager.settings["performance_mode"] = False      # animations back: no longer
+            self._set_quietly(self.chk_performance, False)          # in Performance mode
+        self._apply_motion()
+
+    def _toggle_performance(self, on: bool):
+        self.manager.settings["performance_mode"] = bool(on)
+        # the Animations box shows what you get: off in Performance mode, your choice otherwise
+        self._set_quietly(self.chk_animations,
+                          False if on else bool(self.manager.settings.get("animations", True)))
+        self._apply_motion()
 
     def _refresh_special_icon_row(self):
         from ui.app_icon import needs_code_again, qicon, special_unlocked
