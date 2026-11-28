@@ -122,6 +122,18 @@ def _smoke_test(app, window, seconds: float) -> None:
         print(f"SMOKE executable={sys.executable!r} own={own_executable()!r} "
               f"bundle={mac_app_bundle()!r} task_cmd={window.gui._task_backend._cmd!r}",
               flush=True)
+        # The app's pictures: sealed in one file inside a built app, and readable by it
+        from core import vault
+        logo_ok = not vault.pixmap('STsoftwareterminalLOGO.png.png').isNull()
+        icon_ok = vault.data('app-icon-light.png') is not None
+        loose = [n for n in ('app-icon-light.png', 'STsoftwareterminalLOGO.png.png',
+                             'app-icon-special.png') if os.path.isfile(os.path.join(vault.ASSETS, n))]
+        print(f"SMOKE vault packed={vault.packed()} logo={logo_ok} icon={icon_ok} loose_files={loose}",
+              flush=True)
+        if not logo_ok or not icon_ok:
+            errors.append("The app's pictures could not be read")
+        if "__compiled__" in globals() and (not vault.packed() or loose):
+            errors.append("A built app must carry its pictures sealed (assets/app.pack), not loose")
         if os.environ.get("ST_SMOKE_TOR"):
             # The VPN's Tor: found, prepared like a connect does, and able to run
             import subprocess
@@ -423,9 +435,9 @@ def _smoke_test(app, window, seconds: float) -> None:
 
 
 def main():
-    _icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              'assets', 'STsoftwareterminalLOGO.png.png')
-    _set_process_icon(_icon_path)
+    from core import vault                         # the app's pictures are sealed in the app
+    if sys.platform == "win32":
+        _set_process_icon(vault.file('STsoftwareterminalLOGO.png.png') or '')
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -442,8 +454,8 @@ def main():
 
     # macOS: the Dock icon is the rounded light / dark icon set by MainWindow (ui/app_icon.py);
     # this square logo would replace it with a plain square in the Dock.
-    if os.path.exists(_icon_path) and sys.platform != "darwin":
-        app.setWindowIcon(QIcon(_icon_path))
+    if sys.platform != "darwin":
+        app.setWindowIcon(vault.icon('STsoftwareterminalLOGO.png.png'))
 
     manager   = AppManager()
     processor = CommandProcessor(manager)

@@ -97,10 +97,10 @@ class VpnView(QWidget):
         logo_row = QHBoxLayout()
         logo_row.addStretch()
         logo_lbl = QLabel()
-        logo_path = os.path.join(_ASSETS, 'STsoftwaretoolVPNLOGO.png.png')
-        if os.path.exists(logo_path):
-            pix = QPixmap(logo_path).scaledToHeight(90, Qt.SmoothTransformation)
-            logo_lbl.setPixmap(pix)
+        from core import vault
+        pix = vault.pixmap('STsoftwaretoolVPNLOGO.png.png')
+        if not pix.isNull():
+            logo_lbl.setPixmap(pix.scaledToHeight(90, Qt.SmoothTransformation))
         else:
             logo_lbl.setText('ST  VPN')
             logo_lbl.setFont(QFont('Segoe UI', 22, QFont.Bold))

@@ -24,6 +24,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "..", "..", "assets")
+PRIVATE = os.path.join(HERE, "private")
 
 SIZE, BODY, RADIUS = 1024, 824, 185      # Apple's macOS icon grid
 SS = 2                                    # supersampling for smooth corners
@@ -37,10 +38,13 @@ VARIANTS = {
     "dark":    (os.path.join(HERE, "STsoftwaretoolLOGOdark.png"), (255, 255, 255, 40),
                 "app-icon-dark-1024.png", "app-icon-dark.png", True),
     # a full picture (no ST layout): used whole
-    "special": (os.path.join(HERE, "STsoftwaretoolLOGOspecial.png"), (255, 255, 255, 46),
-                "app-icon-special-1024.png", "app-icon-special.png", False),
-    "special2": (os.path.join(HERE, "STsoftwaretoolLOGOspecial2.png"), (255, 255, 255, 46),
-                 "app-icon-special2-1024.png", "app-icon-special2.png", False),
+    # Special icons live in packaging/macos/private/ (never committed): after making them, seal
+    # each with its code: python scripts/pack_assets.py --special special2 '<code>' \
+    #     packaging/macos/private/app-icon-special2.png
+    "special": (os.path.join(PRIVATE, "STsoftwaretoolLOGOspecial.png"), (255, 255, 255, 46),
+                "private/app-icon-special-1024.png", "../packaging/macos/private/app-icon-special.png", False),
+    "special2": (os.path.join(PRIVATE, "STsoftwaretoolLOGOspecial2.png"), (255, 255, 255, 46),
+                 "private/app-icon-special2-1024.png", "../packaging/macos/private/app-icon-special2.png", False),
 }
 
 

@@ -138,12 +138,9 @@ class AntivirusView(QWidget):
         header.setSpacing(14)
 
         logo_lbl = QLabel()
-        _logo = os.path.normpath(
-            os.path.join(os.path.dirname(__file__), '..', 'assets',
-                         'STsoftwaretoolantivirusLOGO.png.png')
-        )
-        if os.path.exists(_logo):
-            px = QPixmap(_logo)
+        from core import vault
+        px = vault.pixmap('STsoftwaretoolantivirusLOGO.png.png')
+        if True:
             if not px.isNull():
                 logo_lbl.setPixmap(
                     px.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)

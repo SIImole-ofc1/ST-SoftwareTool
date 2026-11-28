@@ -50,3 +50,11 @@ publish/
 
 # Wrangler local cache
 .wrangler/
+
+# Special app icons: only their sealed copies (assets/app-icon-special*.enc) are committed;
+# the plain pictures stay on the maintainer's computer
+packaging/macos/private/
+assets/app-icon-special*.png
+# Written by the build from the ST_PACK_KEY secret (scripts/pack_assets.py)
+core/_pack_key.py
+assets/app.pack

@@ -66,13 +66,17 @@ Write-Host "  Using Python: $python"
 # Clean previous Nuitka outputs
 Remove-Item -Recurse -Force dist_nuitka -ErrorAction SilentlyContinue
 
+# Seal the app's pictures into one encrypted file; its key is compiled into the app
+& $python scripts/pack_assets.py build/pack
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: packing the app's pictures failed" -ForegroundColor Red; exit 1 }
+
 # Build main app
 & $python -m nuitka `
     --standalone `
     --windows-console-mode=disable `
     --enable-plugin=pyside6 `
     --windows-icon-from-ico=assets/STsoftwareterminalLOGO.ico `
-    --include-data-dir=assets=assets `
+    --include-data-files=build/pack/app.pack=assets/app.pack `
     --include-data-dir=core/tor_bundle=core/tor_bundle `
     --include-data-dir=tools=tools `
     --output-dir=dist_nuitka `

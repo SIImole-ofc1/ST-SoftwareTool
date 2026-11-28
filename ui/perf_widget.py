@@ -32,8 +32,7 @@ _NET_H    = 22
 _RADIUS   = 22          # macOS widget corner radius
 _ACCENT   = {'CPU': '#0A84FF', 'RAM': '#30D158', 'GPU': '#FF9F0A', 'SSD': '#BF5AF2'}
 
-_LOGO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     'assets', 'STsoftwareterminalLOGO.png.png')
+_LOGO = 'STsoftwareterminalLOGO.png.png'          # from core/vault.py
 
 
 def _disk_percent() -> Optional[float]:
@@ -92,7 +91,8 @@ class PerfPanel(QWidget):
         self._gloss: Optional[float] = None
         self._tint: float = 1.0
 
-        logo = QPixmap(_LOGO)
+        from core import vault
+        logo = vault.pixmap(_LOGO)
         self._logo = (logo.scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                       if not logo.isNull() else None)
 

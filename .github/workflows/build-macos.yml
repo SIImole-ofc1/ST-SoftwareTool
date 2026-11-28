@@ -109,6 +109,12 @@ jobs:
           done
           iconutil -c icns build/ST.iconset -o build/ST.icns
 
+      - name: Seal the app's pictures (one encrypted file, key compiled into the app)
+        run: |
+          python -m pip install pillow
+          python scripts/pack_assets.py build/pack
+          test -s build/pack/app.pack && test -s core/_pack_key.py
+
       - name: Compile app with Nuitka
         run: |
           python -m nuitka \
@@ -123,7 +129,7 @@ jobs:
             --macos-app-protected-resource="NSDownloadsFolderUsageDescription:ST-SoftwareTool's File Manager shows and manages your Downloads." \
             --macos-app-protected-resource="NSRemovableVolumesUsageDescription:ST-SoftwareTool's File Manager shows the files on USB drives and memory cards." \
             --macos-app-protected-resource="NSNetworkVolumesUsageDescription:ST-SoftwareTool's File Manager shows the files on network drives." \
-            --include-data-dir=assets=assets \
+            --include-data-files=build/pack/app.pack=assets/app.pack \
             --include-package-data=certifi \
             --include-data-files=build/tools/yt-dlp_macos=tools/yt-dlp_macos \
             --output-dir=build/nuitka \
