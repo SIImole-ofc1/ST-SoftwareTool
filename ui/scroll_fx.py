@@ -20,10 +20,10 @@ import weakref
 from typing import Optional
 
 import shiboken6
-from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QApplication, QListView,
-                               QStyledItemDelegate, QWidget)
+                               QStyledItemDelegate, QTableView, QWidget)
 
 ENABLED = True
 
@@ -160,11 +160,9 @@ class _Ring(QWidget):
 
     def paintEvent(self, _event) -> None:
         fx = self.fx
-        m = fx.ring
-        if not ENABLED or not m['shown'] or m['h'] <= 1:
+        rect = fx.ring_rect()
+        if rect is None:
             return
-        bar = fx.area.verticalScrollBar()
-        rect = QRectF(m['x'], m['y'] - bar.value(), m['w'], m['h']).adjusted(1, 1, -1, -1)
         accent = self.palette().highlight().color()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -185,6 +183,9 @@ class _Fx(QObject):
         super().__init__(area)
         self.area = area
         self.view: Optional[QAbstractItemView] = area if isinstance(area, QAbstractItemView) else None
+        # Big live tables (Task Manager, Services …) repaint expensively: their rows don't pop
+        # in while scrolling — only when the table is filled (edges and the ring still move)
+        self.pop_on_scroll = not isinstance(area, QTableView)
         self.rows: dict = {}          # key → (start, direction)   rows animating in
         self.shown: dict = {}         # key → (top, bottom)         rows in view (content coords)
         self.entrance_until = 0.0
@@ -193,6 +194,10 @@ class _Fx(QObject):
                      'vh': 0.0, 'tx': 0.0, 'ty': 0.0, 'tw': 0.0, 'th': 0.0, 'shown': False, 'ready': False}
         self.wheel = None             # (start, from, to)
         self._detached = False
+        self._pass = None             # numbers shared by every cell painted in one pass
+        self._poses: dict = {}        # key → pose, for the other cells of the same row
+        self._ring_area = QRect()     # where the ring was last drawn (viewport coords)
+        self._last_value = area.verticalScrollBar().value()
         self._model = None
         self._last = time.monotonic()
         self.timer = QTimer(self)
@@ -248,19 +253,35 @@ class _Fx(QObject):
             self.view.viewport().update()
             self._retarget_ring(snap=True)
 
-    def row_pose(self, rect, index) -> tuple:
-        """(dy, scale, opacity) for a row being painted now."""
+    def _paint_pass(self) -> tuple:
         now = time.monotonic()
+        if self._pass is None or now - self._pass[0] > 0.004:
+            bar = self.area.verticalScrollBar()
+            vp = self.area.viewport()
+            self._pass = (now, bar.value(), min(EDGE_PX, bar.value() - bar.minimum()),
+                          min(EDGE_PX, bar.maximum() - bar.value()), vp.height(), max(1, vp.width()))
+            self._poses.clear()
+        return self._pass
+
+    def row_pose(self, rect, index) -> tuple:
+        """(dy, scale, opacity) for a row being painted now (worked out once per row and
+        paint pass; a table's other cells reuse it)."""
+        now, value, fade_top, fade_bottom, view_h, width = self._paint_pass()
         key = self.key(index)
-        top = rect.top() + self.area.verticalScrollBar().value()
+        pose = self._poses.get(key)
+        if pose is not None:
+            return pose
+        top = rect.top() + value
         if key not in self.shown:                       # just came into view
-            delay = 0.0
-            if now < self.entrance_until:
-                delay = min(STAGGER_MAX, self.entrance_order * STAGGER)
-                self.entrance_order += 1
-            below = rect.center().y() > self.area.viewport().height() / 2
-            self.rows[key] = (now + delay, 1 if below else -1)
-            self._start()
+            entering = now < self.entrance_until
+            if entering or self.pop_on_scroll:
+                delay = 0.0
+                if entering:
+                    delay = min(STAGGER_MAX, self.entrance_order * STAGGER)
+                    self.entrance_order += 1
+                below = rect.center().y() > view_h / 2
+                self.rows[key] = (now + delay, 1 if below else -1)
+                self._start()
         self.shown[key] = (top, top + rect.height())
 
         dy, scale, opacity = 0.0, 1.0, 1.0
@@ -276,21 +297,18 @@ class _Fx(QObject):
                 if REDUCED:
                     dy = direction * 4 * (1 - _ease_out(t / FADE_MS))
                 else:
-                    width = max(1, self.area.viewport().width())
                     shrink = min(0.2, 48 / width)           # wide rows shrink less
                     scale = 1 - shrink * (1 - pos)
                     dy = direction * SHIFT_PX * (1 - pos)
         # edge fades while there is more to scroll
-        bar = self.area.verticalScrollBar()
-        view_h = self.area.viewport().height()
-        fade_top = min(EDGE_PX, bar.value() - bar.minimum())
-        fade_bottom = min(EDGE_PX, bar.maximum() - bar.value())
         cy = rect.center().y()
         if fade_top > 0 and cy < fade_top:
             opacity *= _smootherstep(cy / fade_top)
         if fade_bottom > 0 and cy > view_h - fade_bottom:
             opacity *= _smootherstep((view_h - cy) / fade_bottom)
-        return dy, scale, opacity
+        pose = (dy, scale, opacity)
+        self._poses[key] = pose
+        return pose
 
     def _scrolled(self, value: int) -> None:
         if not ENABLED or not self.alive():
@@ -300,10 +318,19 @@ class _Fx(QObject):
         for k in gone:
             del self.shown[k]
             self.rows.pop(k, None)
+        dy = value - self._last_value
+        self._last_value = value
+        self._pass = None
         if self.view is not None:
-            self.view.viewport().update()               # edge fades follow every row
-            if self.ring_widget is not None:
-                self.ring_widget.update()
+            # Qt moves the pixels it already has; only rows in a fade band (now, or before the
+            # move) look different, so only those are painted again
+            vp = self.view.viewport()
+            w = vp.width()
+            band = EDGE_PX + 40
+            shift = abs(dy) + 2
+            vp.update(QRect(0, 0, w, band + shift))
+            vp.update(QRect(0, view_h - band - shift, w, band + shift))
+            self._update_ring()
 
     # model ------------------------------------------------------------------
 
@@ -355,7 +382,7 @@ class _Fx(QObject):
             index = rows[0] if rows else None
         if index is None or not index.isValid():
             m['shown'] = False
-            self.ring_widget.update()
+            self._update_ring()
             return
         r = view.visualRect(index)
         if r.isEmpty():                                 # e.g. scrolled far away: keep last
@@ -371,9 +398,28 @@ class _Fx(QObject):
         if snap or REDUCED or not m['ready'] or not ENABLED:
             m.update(x=m['tx'], y=m['ty'], w=m['tw'], h=m['th'], vx=0.0, vy=0.0, vw=0.0, vh=0.0,
                      ready=True)
-            self.ring_widget.update()
+            self._update_ring()
         else:
             self._start()
+
+    def ring_rect(self) -> Optional[QRectF]:
+        m = self.ring
+        if not ENABLED or not m['shown'] or m['h'] <= 1:
+            return None
+        bar = self.area.verticalScrollBar()
+        return QRectF(m['x'], m['y'] - bar.value(), m['w'], m['h']).adjusted(1, 1, -1, -1)
+
+    def _update_ring(self) -> None:
+        """Repaint only where the ring was and where it is now (the list under the ring has to
+        be painted again too, so a whole-list update would be costly)."""
+        if self.ring_widget is None:
+            return
+        rect = self.ring_rect()
+        now = rect.toAlignedRect().adjusted(-3, -3, 3, 3) if rect is not None else QRect()
+        area = self._ring_area.united(now) if not self._ring_area.isNull() else now
+        self._ring_area = now
+        if not area.isNull():
+            self.ring_widget.update(area)
 
     def _step_ring(self, dt: float) -> bool:
         m = self.ring
@@ -443,12 +489,18 @@ class _Fx(QObject):
             busy |= self._step_wheel()
         if self.rows:
             busy = True
-            self.area.viewport().update()
+            value = self.area.verticalScrollBar().value()
+            vp = self.area.viewport()
+            area = QRect()
+            for key in self.rows:
+                top, bottom = self.shown.get(key, (None, None))
+                if top is not None:
+                    area = area.united(QRect(0, int(top - value) - SHIFT_PX - 2, vp.width(),
+                                             int(bottom - top) + 2 * SHIFT_PX + 4))
+            vp.update(area if not area.isNull() else vp.rect())
         if self.ring_widget is not None and self.ring['shown'] and self._step_ring(dt):
             busy = True
-            self.ring_widget.update()
-        elif self.ring_widget is not None:
-            self.ring_widget.update()
+            self._update_ring()
         if not busy:
             self.timer.stop()
 
@@ -463,7 +515,6 @@ class _Fx(QObject):
         elif obj is self.area:
             if kind == QEvent.Show and self.view is not None:
                 self._hook_model()                      # the model may have been set since
-                self.reset(replay=True)                 # a tab opened: rows come in again
             elif kind in (QEvent.Resize, QEvent.LayoutRequest):
                 self._sync_ring_geometry()
         return False

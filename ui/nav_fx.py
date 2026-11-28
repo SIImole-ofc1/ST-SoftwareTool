@@ -18,9 +18,9 @@ import weakref
 from typing import Optional
 
 import shiboken6
-from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QTabWidget, QWidget
+from PySide6.QtCore import QEvent, QObject, QPointF, QRect, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import QApplication, QTabWidget, QWidget
 
 from ui import scroll_fx
 
@@ -77,6 +77,38 @@ class _Glide(QWidget):
             self.fx.paint(self)
 
 
+class _Cover(QWidget):
+    """Over the pages during a change: the old page fading out, the new one sliding in — two
+    pictures, so nothing has to be laid out or painted again while it moves. Clicks go through
+    to the real page underneath."""
+
+    def __init__(self, tabs: QTabWidget):
+        super().__init__(tabs)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        # It paints every pixel itself, so Qt doesn't repaint the page under it each frame
+        self.setAttribute(Qt.WA_OpaquePaintEvent)
+        self.old: Optional[QPixmap] = None
+        self.new: Optional[QPixmap] = None
+        self.t = 1.0
+        self.dx = 0.0
+        self.hide()
+
+    def paintEvent(self, _event) -> None:
+        if self.new is None:
+            return
+        e = 1 - (1 - self.t) ** 4                       # ease out
+        p = QPainter(self)
+        p.setCompositionMode(QPainter.CompositionMode_Source)
+        glass = self.window().testAttribute(Qt.WA_TranslucentBackground)
+        p.fillRect(self.rect(), Qt.transparent if glass else self.palette().window().color())
+        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        if self.old is not None and e < 1:
+            p.setOpacity(1 - e)
+            p.drawPixmap(QPointF(-self.dx * 0.35 * e, 0), self.old)
+        p.setOpacity(min(1.0, self.t * 1.6))
+        p.drawPixmap(QPointF(self.dx * (1 - e), 0), self.new)
+
+
 class _TabFx(QObject):
     def __init__(self, tabs: QTabWidget):
         super().__init__(tabs)
@@ -91,12 +123,14 @@ class _TabFx(QObject):
         self.s = dict(x0=0.0, x1=0.0, v0=0.0, v1=0.0, alpha=0.0, pop=1.0, press=1.0, pv=0.0,
                       dot=0.0, dv=0.0, dalpha=0.0, hover=-1, pressing=False)
         self.prev = tabs.currentIndex()
-        self.page = None            # (widget, effect, start, dx, home)
+        self.page = None            # start time of the page change running now
+        self.cover = _Cover(tabs)
         self._detached = False
         self._last = time.monotonic()
         self.timer = QTimer(self)
         self.timer.setInterval(16)
         self.timer.timeout.connect(self._tick)
+        self._drawn = QRect()                   # where the pill / dot were last painted
         tabs.currentChanged.connect(self._changed)
         _ALL.add(self)
         self._start()
@@ -142,41 +176,43 @@ class _TabFx(QObject):
     def _changed(self, index: int) -> None:
         if not self.alive():
             return
-        direction = 1 if index > self.prev else -1
-        self.prev = index
+        old_index, self.prev = self.prev, index
+        direction = 1 if index > old_index else -1
         self.finish_page()
         self._start()
         page = self.tabs.widget(index)
-        if not ENABLED or scroll_fx.REDUCED or page is None or page.graphicsEffect() is not None:
+        old = self.tabs.widget(old_index) if 0 <= old_index < self.tabs.count() else None
+        if not ENABLED or scroll_fx.REDUCED or page is None or not self.tabs.isVisible():
             return
-        effect = QGraphicsOpacityEffect(page)
-        effect.setOpacity(0.0)
-        page.setGraphicsEffect(effect)
-        home = page.pos()
-        page.move(home + QPoint(direction * PAGE_SHIFT, 0))
-        self.page = (page, effect, time.monotonic(), direction * PAGE_SHIFT, home)
+        stack = page.parentWidget()
+        if stack is None or page.width() < 2:
+            return
+        # one picture of each page (the old one still has its size and contents)
+        self.cover.old = old.grab() if old is not None and old.size() == page.size() else None
+        self.cover.new = page.grab()
+        self.cover.dx = direction * PAGE_SHIFT
+        self.cover.t = 0.0
+        self.cover.setGeometry(stack.geometry().translated(0, 0) if stack.parentWidget() is self.tabs
+                               else page.geometry())
+        self.cover.show()
+        self.cover.raise_()
+        self.page = time.monotonic()
 
     def finish_page(self) -> None:
         if self.page is None:
             return
-        page, _effect, _start, _dx, home = self.page
         self.page = None
-        if shiboken6.isValid(page):
-            page.move(home)
-            page.setGraphicsEffect(None)
+        if shiboken6.isValid(self.cover):
+            self.cover.hide()
+            self.cover.old = self.cover.new = None
 
     def _step_page(self) -> bool:
-        page, effect, start, dx, home = self.page
-        if not shiboken6.isValid(page):
-            self.page = None
-            return False
-        t = (time.monotonic() - start) * 1000 / PAGE_MS
+        t = (time.monotonic() - self.page) * 1000 / PAGE_MS
         if t >= 1:
             self.finish_page()
             return False
-        e = 1 - (1 - t) ** 4                             # ease out
-        page.move(home + QPoint(round(dx * (1 - e)), 0))
-        effect.setOpacity(min(1.0, t * 1.6))
+        self.cover.t = t
+        self.cover.update()
         return True
 
     # the pill and the dot -------------------------------------------------------
@@ -250,6 +286,25 @@ class _TabFx(QObject):
             busy |= abs(s['dot'] - center) > 0.05 or abs(s['dv']) > 0.5 or s['dalpha'] < 0.999
         return busy
 
+    def _areas(self) -> QRect:
+        """Where the pill and the dot are now (tab-bar coordinates, with room for the pen)."""
+        s, area = self.s, QRect()
+        target = self._rect(self._glide_index())
+        if s['alpha'] > 0.01 and target is not None:
+            area = QRect(int(s['x0']) - 12, int(target.top()) - 2,
+                         int(s['x1'] - s['x0']) + 24, int(target.height()) + 4)
+        active = self._rect(self.bar.currentIndex())
+        if s['dalpha'] > 0.01 and active is not None:
+            w = 16 * 3.2 + 8
+            area = area.united(QRect(int(s['dot'] - w / 2), int(active.bottom()) - 6, int(w), 10))
+        return area
+
+    def _repaint(self) -> None:
+        now = self._areas()
+        area = self._drawn.united(now) if not self._drawn.isNull() else now
+        self._drawn = now
+        self.glide.update(area if not area.isNull() else self.glide.rect())
+
     def paint(self, widget: QWidget) -> None:
         s = self.s
         accent = widget.palette().highlight().color()
@@ -299,6 +354,6 @@ class _TabFx(QObject):
         busy = self._step(dt)
         if self.page is not None:
             busy |= self._step_page()
-        self.glide.update()
+        self._repaint()
         if not busy:
             self.timer.stop()

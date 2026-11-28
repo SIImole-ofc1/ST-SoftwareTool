@@ -149,7 +149,8 @@ class _PerfWorker(QThread):
                 'disk': self._mon.disk_io(),
                 'net':  self._mon.network(),
             })
-            self.msleep(1000)
+            from ui import perf_mode
+            self.msleep(perf_mode.interval(1000))     # Performance mode: every 2 s
 
 
 # ── background device-load thread ─────────────────────────────────────────────
@@ -275,6 +276,7 @@ class GUIView(QWidget):
     files_open_terminal = Signal(str)        # File Manager › Open in ST Terminal (a folder)
     widgets_changed     = Signal()           # Settings › Widgets & Menu Bar changed
     speed_test_done     = Signal(dict)       # Device Manager › Speed Test finished
+    performance_changed = Signal(bool)       # Settings › Theme › Performance mode
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -339,9 +341,11 @@ class GUIView(QWidget):
         if self._task_backend.available:
             self._task_worker.start()
 
-        # Animations: sections glide (ui/nav_fx.py), lists scroll (ui/scroll_fx.py)
-        from ui import nav_fx, scroll_fx
-        on = bool(self.manager.settings.get("animations", True))
+        # Animations: sections glide (ui/nav_fx.py), lists scroll (ui/scroll_fx.py) — unless
+        # Performance mode is on (ui/perf_mode.py)
+        from ui import nav_fx, perf_mode, scroll_fx
+        perf_mode.load(self.manager.settings)
+        on = perf_mode.animations_on(self.manager.settings)
         scroll_fx.set_enabled(on)
         nav_fx.set_enabled(on)
         QTimer.singleShot(0, self._install_animations)
@@ -1162,11 +1166,18 @@ class GUIView(QWidget):
         self.chk_animations.setChecked(bool(self.manager.settings.get("animations", True)))
         self.chk_animations.toggled.connect(self._toggle_animations)
         tl.addWidget(self.chk_animations)
+        self.chk_performance = QCheckBox(
+            "Performance mode  —  no animations, live numbers refresh half as often "
+            "(smoother on older or busy computers)")
+        self.chk_performance.setChecked(bool(self.manager.settings.get("performance_mode", False)))
+        self.chk_performance.toggled.connect(self._toggle_performance)
+        tl.addWidget(self.chk_performance)
+        self.chk_animations.setEnabled(not self.chk_performance.isChecked())
         layout.addWidget(theme_box)
 
         # ── App Icon (macOS) ──────────────────────────────────────────────────
         if IS_MAC:
-            from ui.app_icon import ICONS
+            from ui.app_icon import qicon
             icon_box = QGroupBox("App Icon")
             il = QVBoxLayout(icon_box)
             self.rb_icon_auto  = QRadioButton(
@@ -1182,7 +1193,7 @@ class GUIView(QWidget):
                 row.addWidget(rb)
                 if key:
                     preview = QLabel()
-                    preview.setPixmap(QIcon(ICONS[key]).pixmap(28, 28))
+                    preview.setPixmap(qicon(key).pixmap(28, 28))
                     row.addWidget(preview)
                 row.addStretch()
                 il.addLayout(row)
@@ -1460,14 +1471,26 @@ class GUIView(QWidget):
         nav_fx.install_all(self)
 
     def _toggle_animations(self, on: bool):
-        from ui import nav_fx, scroll_fx
+        from ui import nav_fx, perf_mode, scroll_fx
         self.manager.settings["animations"] = bool(on)
-        scroll_fx.set_enabled(on)
-        nav_fx.set_enabled(on)
+        effective = perf_mode.animations_on(self.manager.settings)
+        scroll_fx.set_enabled(effective)
+        nav_fx.set_enabled(effective)
         self._save_settings_quietly()
 
+    def _toggle_performance(self, on: bool):
+        from ui import nav_fx, perf_mode, scroll_fx
+        self.manager.settings["performance_mode"] = bool(on)
+        perf_mode.load(self.manager.settings)
+        effective = perf_mode.animations_on(self.manager.settings)
+        scroll_fx.set_enabled(effective)
+        nav_fx.set_enabled(effective)
+        self.chk_animations.setEnabled(not on)
+        self._save_settings_quietly()
+        self.performance_changed.emit(bool(on))
+
     def _refresh_special_icon_row(self):
-        from ui.app_icon import ICONS, special_unlocked
+        from ui.app_icon import needs_code_again, qicon, special_unlocked
         names = {"special": "Special", "special2": "Special 2"}
         locked_hint = {"special": "Locked — get the code from the Download button on the website",
                        "special2": "Locked — needs its own special code"}
@@ -1480,10 +1503,11 @@ class GUIView(QWidget):
             if unlocked:
                 rb.setText(names[key])
                 preview.setStyleSheet("")
-                preview.setPixmap(QIcon(ICONS[key]).pixmap(28, 28))
+                preview.setPixmap(qicon(key, self.manager.settings).pixmap(28, 28))
             else:
                 rb.setText(f"{names[key]}  🔒")
-                preview.setText(locked_hint[key])
+                preview.setText("Type your code once more to use it again"
+                                if needs_code_again(self.manager.settings, key) else locked_hint[key])
                 preview.setStyleSheet("font-size: 10px;")
         self._special_unlock_btn.setVisible(any_locked)
 
@@ -1675,9 +1699,14 @@ class GUIView(QWidget):
     def _refresh_brew_status(self):
         from core import homebrew
         if homebrew.is_installed():
-            ver = homebrew.version() or "Homebrew"
-            self._brew_status.setText(f"✓  {ver}  —  {homebrew.brew_path()}")
+            path = homebrew.brew_path()
+            self._brew_status.setText(f"✓  Homebrew  —  {path}")
             self._brew_btn.setText("Open in Terminal")
+
+            def show(ver):                      # `brew --version` is slow: off the UI thread
+                if isinstance(ver, str) and ver:
+                    self._brew_status.setText(f"✓  {ver}  —  {path}")
+            call_async(self, homebrew.version, show)
         else:
             self._brew_status.setText("Homebrew is not installed on this Mac.")
             self._brew_btn.setText("Install Homebrew…")

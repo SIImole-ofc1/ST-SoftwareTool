@@ -175,10 +175,25 @@ def blur_supported() -> bool:
         return False
 
 
+_accent_cache = (-1e9, None)
+
+
 def accent_color() -> Optional[str]:
-    """The accent colour chosen in System Settings › Appearance, as '#rrggbb'."""
+    """The accent colour chosen in System Settings › Appearance, as '#rrggbb'. Widgets ask on
+    every repaint, so the answer is kept for a few seconds."""
+    global _accent_cache
     if not IS_MAC:
         return None
+    import time
+    when, value = _accent_cache
+    if time.monotonic() - when < 5:
+        return value
+    value = _ask_accent_color()
+    _accent_cache = (time.monotonic(), value)
+    return value
+
+
+def _ask_accent_color() -> Optional[str]:
     try:
         color = _send(ctypes.c_void_p)(_cls(b'NSColor'), _sel(b'controlAccentColor'))
         srgb = _send(ctypes.c_void_p)(_cls(b'NSColorSpace'), _sel(b'sRGBColorSpace'))

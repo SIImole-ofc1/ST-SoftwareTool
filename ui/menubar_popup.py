@@ -41,7 +41,8 @@ class MenuBarPopup(QWidget):
         self.details = DetailsPanel(self)
         root.addWidget(self.details)
         self._details_timer = QTimer(self)
-        self._details_timer.setInterval(2000)
+        from ui import perf_mode
+        self._details_timer.setInterval(perf_mode.interval(2000))   # Performance mode: 4 s
         self._details_timer.timeout.connect(self._refresh_details)
         self._details_busy = False
 

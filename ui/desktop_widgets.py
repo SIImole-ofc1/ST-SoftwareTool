@@ -33,8 +33,7 @@ KINDS = ('performance', 'clock', 'network', 'music')
 TITLES = {'performance': 'Performance', 'clock': 'Clock', 'network': 'Network',
           'music': 'Music & Audio'}
 _ACCENT = {'CPU': '#0A84FF', 'RAM': '#30D158', 'GPU': '#FF9F0A', 'SSD': '#BF5AF2'}
-_LOGO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     'assets', 'STsoftwareterminalLOGO.png.png')
+_LOGO = 'STsoftwareterminalLOGO.png.png'          # from core/vault.py
 
 
 def is_dark() -> bool:
@@ -49,9 +48,36 @@ from core.performance_monitor import fmt_rate as _fmt_rate      # noqa: E402
 
 # ── the grid ─────────────────────────────────────────────────────────────────
 
+_apple_rects: tuple = (-1e9, [])          # (when, frames) — asking takes ~0.3 s
+_apple_busy = False
+
+
 def apple_widget_rects() -> list:
     """Where macOS's own desktop widgets are (window frames, in points). Only positions and
-    sizes are read — nothing of what they show."""
+    sizes are read — nothing of what they show. Answers from a cache; when it is older than
+    20 s it is refreshed in the background, so a drop never waits for it. Only the very first
+    call asks right away."""
+    global _apple_busy
+    when, rects = _apple_rects
+    if when < 0:
+        _fetch_apple_rects()
+        return list(_apple_rects[1])
+    if time.monotonic() - when > 20 and not _apple_busy:
+        import threading
+        _apple_busy = True
+        threading.Thread(target=_fetch_apple_rects, daemon=True).start()
+    return list(rects)
+
+
+def _fetch_apple_rects() -> None:
+    global _apple_rects, _apple_busy
+    try:
+        _apple_rects = (time.monotonic(), _ask_apple_rects())
+    finally:
+        _apple_busy = False
+
+
+def _ask_apple_rects() -> list:
     script = ('ObjC.import("CoreGraphics");'
               'const l = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo('
               '$.kCGWindowListOptionAll, 0))) || [];'
@@ -338,7 +364,8 @@ class PerformanceWidget(DesktopWidget):
         self._ram_text = ''
         self._disk = self._disk_percent()
         self._up = self._down = 0.0
-        logo = QPixmap(_LOGO)
+        from core import vault
+        logo = vault.pixmap(_LOGO)
         self._logo = logo.scaled(18, 18, Qt.KeepAspectRatio, Qt.SmoothTransformation) \
             if not logo.isNull() else None
         t = QTimer(self)
@@ -656,6 +683,11 @@ class MusicWidget(DesktopWidget):
     # equalizer + live progress ----------------------------------------------
 
     def _sync_anim(self) -> None:
+        from ui import perf_mode
+        if perf_mode.ON:                          # Performance mode: no equalizer animation
+            self._anim.stop()
+            self._eq = [0.0] * self._EQ_BARS
+            return
         moving = self._playing() or any(h > 0.03 for h in self._eq)
         if moving and not self._anim.isActive():
             self._anim.start()

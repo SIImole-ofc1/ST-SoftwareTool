@@ -28,9 +28,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(820, 580)
         self.resize(960, 660)
 
-        _icon = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             "assets", "STsoftwareterminalLOGO.png.png")
-        self._app_icon = QIcon(_icon) if os.path.exists(_icon) else QIcon()
+        from core import vault                     # the app's pictures are sealed in the app
+        self._app_icon = vault.icon("STsoftwareterminalLOGO.png.png")
         self.setWindowIcon(self._app_icon)
 
         # macOS Glass theme: the window must be translucent before its native window
@@ -108,7 +107,8 @@ class MainWindow(QMainWindow):
             self._tray.activated.connect(self._on_tray_activated)
             self._tray.setVisible(bool(self.manager.settings.get('menubar_icon', True)))
             self._popup_timer = QTimer(self)
-            self._popup_timer.setInterval(1000)
+            from ui import perf_mode
+            self._popup_timer.setInterval(perf_mode.interval(1000))
             self._popup_timer.timeout.connect(self._refresh_popup)
             return
 
@@ -478,6 +478,7 @@ class MainWindow(QMainWindow):
         self.gui.widget_glass_changed.connect(self._apply_widget_glass)
         self.gui.widgets_changed.connect(self._apply_widget_settings)
         self.gui.speed_test_done.connect(self._on_speed_test)
+        self.gui.performance_changed.connect(self._apply_performance)
         self.gui.uninstall_requested.connect(self.uninstall_app)
         self.gui.files_open_terminal.connect(self._open_terminal_at)
         self.stack.addWidget(self.gui)         # index 1
@@ -1044,7 +1045,8 @@ class MainWindow(QMainWindow):
             self._ip_timer.setInterval(5 * 60 * 1000)
             self._ip_timer.timeout.connect(self._refresh_widget_ips)
             self._music_timer = QTimer(self)
-            self._music_timer.setInterval(2000)
+            from ui import perf_mode
+            self._music_timer.setInterval(perf_mode.interval(2000))
             self._music_timer.timeout.connect(self._refresh_music)
             self._music_busy = False
         if 'network' in self._widgets:
@@ -1146,6 +1148,20 @@ class MainWindow(QMainWindow):
         self._go_gui()
         self.gui.show_widget_settings()
 
+    def _apply_performance(self, _on: bool = False):
+        """Settings › Theme › Performance mode changed: refresh live numbers at its pace."""
+        from ui import perf_mode
+        if getattr(self, '_popup_timer', None) is not None:
+            self._popup_timer.setInterval(perf_mode.interval(1000))
+        if getattr(self, '_music_timer', None) is not None:
+            self._music_timer.setInterval(perf_mode.interval(2000))
+        if self._popup is not None:
+            self._popup._details_timer.setInterval(perf_mode.interval(2000))
+        w = self._widgets.get('music')
+        if w is not None:
+            w._sync_anim()
+            w.update()
+
     def _on_speed_test(self, result: dict):
         w = self._widgets.get('network')
         if w is not None:
@@ -1242,11 +1258,11 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(16, 16, 16, 12)
 
         hdr = QHBoxLayout()
-        _icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                  'assets', 'STsoftwareterminalLOGO.png.png')
-        if os.path.exists(_icon_path):
+        from core import vault
+        _logo = vault.pixmap('STsoftwareterminalLOGO.png.png')
+        if not _logo.isNull():
             ico = QLabel()
-            ico.setPixmap(QPixmap(_icon_path).scaled(56, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            ico.setPixmap(_logo.scaled(56, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             hdr.addWidget(ico)
             hdr.addSpacing(10)
         title = QLabel(f"<b>ST-SoftwareTool  v{APP_VERSION}</b>")
