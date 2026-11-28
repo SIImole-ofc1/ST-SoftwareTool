@@ -1081,12 +1081,24 @@ class MainWindow(QMainWindow):
         self._music_busy = True
         from core import media
 
+        def work():
+            asked = time.monotonic()
+            return asked, media.now_playing(), media.volume()
+
         def done(r):
             self._music_busy = False
             w = self._widgets.get('music')
-            if w is not None and isinstance(r, tuple) and len(r) == 2:
-                w.set_now_playing(*r)
-        call_async(self, lambda: (media.now_playing(), media.volume()), done)
+            if w is not None and isinstance(r, tuple) and len(r) == 3:
+                asked, np, vol = r
+                w.set_now_playing(np, vol, asked)
+        call_async(self, work, done)
+
+    def _music_settled(self):
+        """A play / pause / next / mute from the widget went through: show the player's state."""
+        w = self._widgets.get('music')
+        if w is not None:
+            w.settled()
+        QTimer.singleShot(80, self._refresh_music)
 
     def _media_control(self, action: str, app: str):
         from core import media
@@ -1096,13 +1108,26 @@ class MainWindow(QMainWindow):
                 self._notify("ST-SoftwareTool — Music & Audio",
                              "To control players like SoundCloud in your browser, allow "
                              "ST-SoftwareTool in System Settings › Privacy & Security › Accessibility.")
-            QTimer.singleShot(300, self._refresh_music)
+            self._music_settled()
         call_async(self, lambda: media.control(action, app or None), done)
 
     def _media_volume(self, level: int):
+        """-1: mute / unmute. 0–100: set the volume — while the slider is dragged only the
+        newest level is sent, one at a time, so they arrive in order."""
         from core import media
-        work = media.toggle_mute if level < 0 else (lambda: media.set_volume(level))
-        call_async(self, work, lambda _r: QTimer.singleShot(100, self._refresh_music))
+        if level < 0:
+            call_async(self, media.toggle_mute, lambda _r: self._music_settled())
+            return
+        self._vol_next = level
+        if not getattr(self, '_vol_busy', False):
+            self._send_volume()
+
+    def _send_volume(self):
+        from core import media
+        level, self._vol_next = getattr(self, '_vol_next', None), None
+        self._vol_busy = level is not None
+        if level is not None:
+            call_async(self, lambda: media.set_volume(level), lambda _r: self._send_volume())
 
     def _set_widgets_locked(self, locked: bool):
         """A widget's "Lock Widgets in Place": applies to all of them."""

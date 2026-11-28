@@ -593,6 +593,7 @@ class MusicWidget(DesktopWidget):
     opens_app = False                         # clicks are for the player, not for opening ST
     control_requested = Signal(str, str)      # action, app
     volume_requested = Signal(int)            # 0–100, or -1 to toggle mute
+    _EQ_BARS = 5
 
     def __init__(self):
         super().__init__()
@@ -603,16 +604,84 @@ class MusicWidget(DesktopWidget):
         self._buttons: dict = {}
         self._vol_rect = QRectF()
         self._mute_rect = QRectF()
+        self._eq_rect = QRectF()
+        self._bar_rect = QRectF()
+        # Presses show their result at once; the player catches up in the background.
+        # Answers asked before a press's command went through would undo that, so they wait.
+        self._pressed: Optional[str] = None
+        self._pending = 0                       # commands sent, not finished yet
+        self._action_at = -1e9
+        self._settle_at = -1e9
+        self._vol_hold_until = 0.0
+        self._vol_sent = 0.0
+        self._np_at = time.monotonic()          # when np['position'] was true
+        self._eq = [0.0] * self._EQ_BARS        # bar heights, 0–1
+        self._anim = QTimer(self)
+        self._anim.setInterval(70)
+        self._anim.timeout.connect(self._tick)
 
-    def set_now_playing(self, np: dict, vol: tuple) -> None:
+    def set_now_playing(self, np: dict, vol: tuple, asked_at: Optional[float] = None) -> None:
+        if asked_at is not None:
+            stale_before = self._settle_at if self._pending == 0 else self._action_at + 3.0
+            if asked_at < max(stale_before, self._settle_at):
+                return                          # older than the last press
         self.np = np if isinstance(np, dict) else {'state': 'none'}
-        self.vol = vol if isinstance(vol, tuple) else self.vol
+        self._np_at = time.monotonic()
+        if isinstance(vol, tuple) and time.monotonic() >= self._vol_hold_until:
+            self.vol = vol
         path = self.np.get('artwork')
         if path != self._art_path:
             self._art_path = path
             img = QImage(path) if path else QImage()
             self._art = QPixmap.fromImage(img) if not img.isNull() else None
+        self._sync_anim()
         self.update()
+
+    def settled(self) -> None:
+        """A command from a press has gone through (called by the owner)."""
+        self._pending = max(0, self._pending - 1)
+        if self._pending == 0:
+            self._settle_at = time.monotonic()
+
+    def _playing(self) -> bool:
+        return self.np.get('state') == 'playing'
+
+    def _position(self) -> float:
+        pos = float(self.np.get('position') or 0)
+        if self._playing():
+            pos += time.monotonic() - self._np_at
+        dur = float(self.np.get('duration') or 0)
+        return min(pos, dur) if dur > 0 else pos
+
+    # equalizer + live progress ----------------------------------------------
+
+    def _sync_anim(self) -> None:
+        moving = self._playing() or any(h > 0.03 for h in self._eq)
+        if moving and not self._anim.isActive():
+            self._anim.start()
+        elif not moving and self._anim.isActive():
+            self._anim.stop()
+
+    def _tick(self) -> None:
+        level, muted = self.vol
+        loud = 0.0 if muted or not self._playing() else 0.3 + 0.7 * max(0, min(100, level)) / 100
+        t = time.monotonic()
+        for i in range(self._EQ_BARS):
+            wave = (math.sin(t * (6.1 + 1.9 * i) + 1.7 * i) * 0.5 + 0.5) * \
+                   (math.sin(t * (2.3 + 0.8 * i) + 0.6 * i) * 0.35 + 0.65)
+            target = loud * (0.18 + 0.82 * wave)
+            self._eq[i] += (target - self._eq[i]) * 0.5
+        self._sync_anim()
+        self.update(self._eq_rect.adjusted(-2, -2, 2, 2).toAlignedRect())
+        self.update(self._bar_rect.adjusted(-2, -2, 2, 2).toAlignedRect())
+
+    def hideEvent(self, event) -> None:
+        self._anim.stop()
+        super().hideEvent(event)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._sync_anim()
 
     def paint_content(self, p, card, dark, c) -> None:
         pad = 14
@@ -649,7 +718,18 @@ class MusicWidget(DesktopWidget):
         fm_t = self._f(12.5, QFont.Bold)
         p.setFont(self._f(9.5, QFont.DemiBold))
         p.setPen(c['accent'])
-        p.drawText(QRectF(tx, card.top() + pad, tw, 16), Qt.AlignVCenter | Qt.AlignLeft, source.upper())
+        eq_w = 24
+        p.drawText(QRectF(tx, card.top() + pad, tw - eq_w - 6, 16), Qt.AlignVCenter | Qt.AlignLeft,
+                   p.fontMetrics().elidedText(source.upper(), Qt.ElideRight, int(tw - eq_w - 6)))
+        # equalizer: moves with the music, as loud as the volume; flat when paused or muted
+        self._eq_rect = QRectF(card.right() - pad - eq_w, card.top() + pad - 1, eq_w, 17)
+        bar_w, gap = 3.0, (eq_w - 3.0 * self._EQ_BARS) / (self._EQ_BARS - 1)
+        p.setPen(Qt.NoPen)
+        p.setBrush(c['accent'])
+        for i, h in enumerate(self._eq):
+            bh = max(2.5, h * self._eq_rect.height())
+            p.drawRoundedRect(QRectF(self._eq_rect.left() + i * (bar_w + gap),
+                                     self._eq_rect.bottom() - bh, bar_w, bh), 1.3, 1.3)
         p.setFont(fm_t)
         p.setPen(c['text'])
         p.drawText(QRectF(tx, card.top() + pad + 18, tw, 20), Qt.AlignVCenter | Qt.AlignLeft,
@@ -659,8 +739,9 @@ class MusicWidget(DesktopWidget):
         p.drawText(QRectF(tx, card.top() + pad + 38, tw, 18), Qt.AlignVCenter | Qt.AlignLeft,
                    p.fontMetrics().elidedText(artist, Qt.ElideRight, int(tw)))
         # progress
-        dur, pos = np.get('duration') or 0, np.get('position') or 0
+        dur, pos = np.get('duration') or 0, self._position()
         bar = QRectF(tx, card.top() + pad + 64, tw, 4)
+        self._bar_rect = bar
         p.setPen(Qt.NoPen)
         p.setBrush(c['track'])
         p.drawRoundedRect(bar, 2, 2)
@@ -674,7 +755,17 @@ class MusicWidget(DesktopWidget):
         for name, dx in (('previous', -30), ('playpause', 0), ('next', 30)):
             r = QRectF(cx + dx - 13, y, 26, 26)
             self._buttons[name] = r
+            if self._pressed == name:            # pressed: a soft disc behind, icon a bit smaller
+                p.setPen(Qt.NoPen)
+                p.setBrush(c['track'])
+                p.drawEllipse(r.center(), 16, 16)
+                p.save()
+                p.translate(r.center())
+                p.scale(0.88, 0.88)
+                p.translate(-r.center())
             self._draw_icon(p, name, r, c['text'], playing=state == 'playing')
+            if self._pressed == name:
+                p.restore()
         # volume
         level, muted = self.vol
         self._mute_rect = QRectF(tx, y + 2, 22, 22)
@@ -715,21 +806,79 @@ class MusicWidget(DesktopWidget):
         else:
             tri(cx - 9, flip=True); tri(cx - 1, flip=True)
 
-    def click(self, pos: QPointF) -> bool:
+    # mouse: controls act the moment they're pressed --------------------------
+
+    def _hit(self, pos: QPointF) -> Optional[str]:
         grow = 6
         for name, r in self._buttons.items():
             if r.adjusted(-grow, -grow, grow, grow).contains(pos):
-                self.control_requested.emit(name, self.np.get('app') or '')
-                return True
+                return name
         if self._mute_rect.adjusted(-4, -4, 4, 4).contains(pos):
+            return 'mute'
+        if self._vol_rect.adjusted(-2, -10, 2, 10).contains(pos):
+            return 'volume'
+        return None
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            hit = self._hit(event.position())
+            if hit:
+                self._pressed = hit
+                self._act(hit, event.position())
+                self.update()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._pressed == 'volume':
+            self._set_volume_at(event.position(), final=False)
+        elif self._pressed is None:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._pressed is not None and event.button() == Qt.LeftButton:
+            if self._pressed == 'volume':
+                self._set_volume_at(event.position(), final=True)
+            self._pressed = None
+            self.update()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _act(self, name: str, pos: QPointF) -> None:
+        now = time.monotonic()
+        if name == 'volume':
+            self._set_volume_at(pos, final=False, force=True)
+            return
+        self._action_at = now
+        self._pending += 1
+        if name == 'mute':
+            level, muted = self.vol
+            self.vol = (level, not muted)
+            self._vol_hold_until = now + 1.5
             self.volume_requested.emit(-1)
-            return True
-        hit = self._vol_rect.adjusted(-2, -10, 2, 10)
-        if hit.contains(pos):
-            level = round(100 * (pos.x() - self._vol_rect.left()) / self._vol_rect.width())
-            self.volume_requested.emit(max(0, min(100, level)))
-            return True
-        return False
+            return
+        np = dict(self.np)
+        if np.get('state') in ('playing', 'paused'):
+            np['position'] = self._position()
+            if name == 'playpause':
+                np['state'] = 'paused' if np['state'] == 'playing' else 'playing'
+            else:                                   # next / previous start a song from the top
+                np['state'], np['position'] = 'playing', 0.0
+            self.np = np
+            self._np_at = now
+        self._sync_anim()
+        self.control_requested.emit(name, np.get('app') or '')
+
+    def _set_volume_at(self, pos: QPointF, final: bool, force: bool = False) -> None:
+        width = max(1.0, self._vol_rect.width())
+        level = max(0, min(100, round(100 * (pos.x() - self._vol_rect.left()) / width)))
+        now = time.monotonic()
+        self.vol = (level, False)
+        self._vol_hold_until = now + 1.5
+        self.update()
+        if final or force or now - self._vol_sent > 0.1:
+            self._vol_sent = now
+            self.volume_requested.emit(level)
 
 
 WIDGET_CLASSES = {'performance': PerformanceWidget, 'clock': ClockWidget,
