@@ -123,6 +123,11 @@ def snap(pos: QPoint, size: tuple, occupied: list) -> QPoint:
     return cells[0]
 
 
+def on_grid(pos: QPoint, size: tuple) -> bool:
+    """Whether `pos` is exactly a cell of the grid (where a drop would have snapped it)."""
+    return snap(pos, size, []) == pos
+
+
 # ── the base widget ──────────────────────────────────────────────────────────
 
 class DesktopWidget(QWidget):
@@ -147,6 +152,7 @@ class DesktopWidget(QWidget):
         self.setAttribute(Qt.WA_QuitOnClose, False)
         self.setFixedSize(*SIZES[self.size_class])
         self.level: Optional[int] = None
+        self._home: Optional[QPoint] = None             # where it was put (see move())
         self.snap_enabled = True
         self.locked = False                             # True: can't be dragged
         self._update_hints()
@@ -182,10 +188,20 @@ class DesktopWidget(QWidget):
         start = QPoint(area.right() - self.width(), area.top())
         self.move(snap(start, (self.width(), self.height()), self.occupied() + apple_widget_rects()))
 
+    def move(self, *args) -> None:
+        """Remember where the widget was put. macOS nudges a new window for a moment, so the
+        grid asks home_rect() — not the window's frame — which cells are taken."""
+        point = QPoint(args[0]) if len(args) == 1 else QPoint(int(args[0]), int(args[1]))
+        self._home = point
+        super().move(point)
+
+    def home_rect(self) -> QRect:
+        return QRect(self._home if self._home is not None else self.pos(), self.size())
+
     def setVisible(self, visible: bool) -> None:
         # macOS nudges a new borderless window when it first appears: put it back exactly
         # where it was placed (on the grid) right after
-        target = self.pos()
+        target = QPoint(self._home) if self._home is not None else self.pos()
         super().setVisible(visible)
         if visible:
             QTimer.singleShot(0, lambda: self.move(target) if self.pos() != target else None)

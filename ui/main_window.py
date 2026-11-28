@@ -971,7 +971,7 @@ class MainWindow(QMainWindow):
             w.edit_requested.connect(self._edit_widgets)
             w.lock_toggled.connect(self._set_widgets_locked)
             w.moved.connect(self._on_widget_moved)
-            w.occupied = lambda me=w: [o.frameGeometry() for o in self._widgets.values()
+            w.occupied = lambda me=w: [o.home_rect() for o in self._widgets.values()
                                        if o is not me and o.isVisible()]
             if kind in ('performance', 'network'):
                 self.gui._perf_worker.perf_ready.connect(w.set_perf)
@@ -987,9 +987,12 @@ class MainWindow(QMainWindow):
             self._configure_widget(w)
             positions = s.get('widget_pos') or {}
             w.place(positions.get(kind) or (s.get('perf_widget_pos') if kind == 'performance' else None))
-            if w.snap_enabled:                          # older positions: onto the grid
-                from ui.desktop_widgets import snap
-                w.move(snap(w.pos(), (w.width(), w.height()), w.occupied()))
+            # A saved place on the grid is used exactly as it was left. Only places saved
+            # before widgets snapped are moved onto the grid (avoiding Apple's widgets too).
+            from ui.desktop_widgets import apple_widget_rects, on_grid, snap
+            size = (w.width(), w.height())
+            if w.snap_enabled and not on_grid(w.home_rect().topLeft(), size):
+                w.move(snap(w.home_rect().topLeft(), size, w.occupied() + apple_widget_rects()))
             w.set_glass(*glass.widget_values(s))
             w.show()
             self._widget_feeds()
@@ -1034,7 +1037,9 @@ class MainWindow(QMainWindow):
             was_snapping = w.snap_enabled
             self._configure_widget(w)
             if w.snap_enabled and not was_snapping:
-                w.move(snap(w.pos(), (w.width(), w.height()), w.occupied()))
+                from ui.desktop_widgets import apple_widget_rects
+                w.move(snap(w.home_rect().topLeft(), (w.width(), w.height()),
+                            w.occupied() + apple_widget_rects()))
         if self._popup is not None:
             self._popup.apply_sections(self.manager.settings)
 
