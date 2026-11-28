@@ -339,6 +339,13 @@ class GUIView(QWidget):
         if self._task_backend.available:
             self._task_worker.start()
 
+        # Animations: sections glide (ui/nav_fx.py), lists scroll (ui/scroll_fx.py)
+        from ui import nav_fx, scroll_fx
+        on = bool(self.manager.settings.get("animations", True))
+        scroll_fx.set_enabled(on)
+        nav_fx.set_enabled(on)
+        QTimer.singleShot(0, self._install_animations)
+
     def cleanup(self):
         # Stop subprocess first so the background thread unblocks from readline()
         self._task_backend.cleanup()
@@ -1043,6 +1050,7 @@ class GUIView(QWidget):
             self._svc_view.load_once()
         if idx == self._startup_tab_idx and self._startup_view is not None:
             self._startup_view.scan_once()
+        QTimer.singleShot(0, self._install_animations)   # views built since (e.g. File Manager)
 
     def _on_proc_selection(self, selected, _deselected):
         self._task_kill_btn.setEnabled(bool(selected.indexes()))
@@ -1149,6 +1157,11 @@ class GUIView(QWidget):
             "light": self.rb_light, "hc": self.rb_hc, "win95": self.rb_win95,
             glass.THEME_KEY: self.rb_glass,
         }.get(current, self.rb_dark).setChecked(True)
+        self.chk_animations = QCheckBox(
+            "Animations  —  sections glide in, rows pop in as you scroll, smooth wheel")
+        self.chk_animations.setChecked(bool(self.manager.settings.get("animations", True)))
+        self.chk_animations.toggled.connect(self._toggle_animations)
+        tl.addWidget(self.chk_animations)
         layout.addWidget(theme_box)
 
         # ── App Icon (macOS) ──────────────────────────────────────────────────
@@ -1440,6 +1453,18 @@ class GUIView(QWidget):
         }.get(theme)
         if rb is not None and not rb.isChecked():
             rb.setChecked(True)
+
+    def _install_animations(self):
+        from ui import nav_fx, scroll_fx
+        scroll_fx.install_all(self)
+        nav_fx.install_all(self)
+
+    def _toggle_animations(self, on: bool):
+        from ui import nav_fx, scroll_fx
+        self.manager.settings["animations"] = bool(on)
+        scroll_fx.set_enabled(on)
+        nav_fx.set_enabled(on)
+        self._save_settings_quietly()
 
     def _refresh_special_icon_row(self):
         from ui.app_icon import ICONS, special_unlocked
