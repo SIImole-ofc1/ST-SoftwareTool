@@ -1,7 +1,7 @@
 """macOS app icon: the light or the dark rounded ST logo, or the special icon (Settings › App Icon).
 
-The special icon is locked until the user types the code shown after pressing Download on
-the website (unlock()).
+The special icons are locked until the user types their code (unlock()): Special's code is
+shown after pressing Download on the website, Special 2's is handed out elsewhere.
 
 Automatic follows the Mac: the dark logo when macOS shows dark app icons (macOS 26 "Icon &
 widget style: Dark") or, when that isn't set, while Dark Mode is on.
@@ -26,26 +26,31 @@ from core.osinfo import mac_app_bundle
 _ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets')
 ICONS = {'light':   os.path.join(_ASSETS, 'app-icon-light.png'),
          'dark':    os.path.join(_ASSETS, 'app-icon-dark.png'),
-         'special': os.path.join(_ASSETS, 'app-icon-special.png')}
-CHOICES = ('auto', 'light', 'dark', 'special')
-CUSTOM = ('dark', 'special')          # carried by the app bundle as a custom icon
+         'special': os.path.join(_ASSETS, 'app-icon-special.png'),
+         'special2': os.path.join(_ASSETS, 'app-icon-special2.png')}
+CHOICES = ('auto', 'light', 'dark', 'special', 'special2')
+CUSTOM = ('dark', 'special', 'special2')    # carried by the app bundle as a custom icon
+SPECIALS = ('special', 'special2')
 
-# SHA-256 of the unlock code (lower-case), so the code isn't sitting in the app as text
-_SPECIAL_CODE = '142a281a530e374416a696516bc7feeeb71e6dc1c7ebeb3498784be73a46a12f'
+# SHA-256 of each unlock code (lower-case), so the codes aren't sitting in the app as text
+_CODES = {'142a281a530e374416a696516bc7feeeb71e6dc1c7ebeb3498784be73a46a12f': 'special',
+          '5564fd4c735f4de2e84a2682980ea80c6efdb71b344aa45c28a72b78b6690505': 'special2'}
+_UNLOCKED_KEY = {'special': 'special_icon_unlocked', 'special2': 'special2_icon_unlocked'}
 
 
-def special_unlocked(settings: dict) -> bool:
-    return bool(settings.get('special_icon_unlocked'))
+def special_unlocked(settings: dict, which: str = 'special') -> bool:
+    return bool(settings.get(_UNLOCKED_KEY[which]))
 
 
-def unlock(settings: dict, code: str) -> bool:
-    """Check the code typed in Settings; on success remember the special icon is unlocked.
-    Capitals and spaces around it don't matter."""
+def unlock(settings: dict, code: str) -> str | None:
+    """Check a code typed in Settings; on success remember which special icon it unlocks and
+    return its name ('special' / 'special2'), else None. Capitals and spaces around it don't
+    matter."""
     normal = (code or '').strip().lower()
-    if hashlib.sha256(normal.encode('utf-8')).hexdigest() != _SPECIAL_CODE:
-        return False
-    settings['special_icon_unlocked'] = True
-    return True
+    which = _CODES.get(hashlib.sha256(normal.encode('utf-8')).hexdigest())
+    if which:
+        settings[_UNLOCKED_KEY[which]] = True
+    return which
 
 _theme_cache = (0.0, '')
 
@@ -81,8 +86,8 @@ def system_wants_dark() -> bool:
 def resolve(choice: str, settings: dict | None = None) -> str:
     if choice in ('light', 'dark'):
         return choice
-    if choice == 'special' and settings is not None and special_unlocked(settings):
-        return 'special'
+    if choice in SPECIALS and settings is not None and special_unlocked(settings, choice):
+        return choice
     return 'dark' if system_wants_dark() else 'light'
 
 

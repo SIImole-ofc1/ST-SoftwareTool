@@ -1173,29 +1173,36 @@ class GUIView(QWidget):
                     row.addWidget(preview)
                 row.addStretch()
                 il.addLayout(row)
-            # Special: locked until the code from the website's Download button is typed
+            # Special icons: locked until their code is typed (Special: the code from the
+            # website's Download button; Special 2: a code handed out elsewhere)
             self.rb_icon_special = QRadioButton("Special")
-            bg_icon.addButton(self.rb_icon_special)
-            special_row = QHBoxLayout()
-            special_row.setSpacing(8)
-            special_row.addWidget(self.rb_icon_special)
-            self._special_preview = QLabel()
-            special_row.addWidget(self._special_preview)
-            self._special_unlock_btn = QPushButton("Unlock…")
-            self._special_unlock_btn.setToolTip(
-                "Type the special code. You get it when you press Download on "
-                "st-softwaretool.pages.dev.")
+            self.rb_icon_special2 = QRadioButton("Special 2")
+            self._special_rows = {}
+            for key, rb in (("special", self.rb_icon_special), ("special2", self.rb_icon_special2)):
+                bg_icon.addButton(rb)
+                row = QHBoxLayout()
+                row.setSpacing(8)
+                row.addWidget(rb)
+                preview = QLabel()
+                row.addWidget(preview)
+                row.addStretch()
+                il.addLayout(row)
+                self._special_rows[key] = (rb, preview)
+            self._special_unlock_btn = QPushButton("Unlock a special icon…")
+            self._special_unlock_btn.setToolTip("Type a special code to unlock a special icon.")
             self._special_unlock_btn.clicked.connect(self._unlock_special_icon)
-            special_row.addWidget(self._special_unlock_btn)
-            special_row.addStretch()
-            il.addLayout(special_row)
+            unlock_row = QHBoxLayout()
+            unlock_row.addWidget(self._special_unlock_btn)
+            unlock_row.addStretch()
+            il.addLayout(unlock_row)
             self._refresh_special_icon_row()
 
             {"light": self.rb_icon_light, "dark": self.rb_icon_dark,
-             "special": self.rb_icon_special}.get(
+             "special": self.rb_icon_special, "special2": self.rb_icon_special2}.get(
                 self.manager.settings.get("app_icon", "auto"), self.rb_icon_auto).setChecked(True)
-            if self.rb_icon_special.isChecked() and not self.rb_icon_special.isEnabled():
-                self.rb_icon_auto.setChecked(True)
+            for rb, _preview in self._special_rows.values():
+                if rb.isChecked() and not rb.isEnabled():
+                    self.rb_icon_auto.setChecked(True)
             hint = QLabel("Shown in the Dock, Finder and Launchpad.")
             hint.setStyleSheet("font-size: 10px; color: #888888;")
             il.addWidget(hint)
@@ -1436,42 +1443,47 @@ class GUIView(QWidget):
 
     def _refresh_special_icon_row(self):
         from ui.app_icon import ICONS, special_unlocked
-        unlocked = special_unlocked(self.manager.settings)
-        self.rb_icon_special.setEnabled(unlocked)
-        self._special_unlock_btn.setVisible(not unlocked)
-        if unlocked:
-            self.rb_icon_special.setText("Special")
-            self._special_preview.setPixmap(QIcon(ICONS["special"]).pixmap(28, 28))
-            self._special_preview.setToolTip("")
-        else:
-            self.rb_icon_special.setText("Special  🔒")
-            self._special_preview.setText("Locked — get the code from the Download button "
-                                          "on the website")
-            self._special_preview.setStyleSheet("font-size: 10px;")
-            self._special_preview.setEnabled(False)
+        names = {"special": "Special", "special2": "Special 2"}
+        locked_hint = {"special": "Locked — get the code from the Download button on the website",
+                       "special2": "Locked — needs its own special code"}
+        any_locked = False
+        for key, (rb, preview) in self._special_rows.items():
+            unlocked = special_unlocked(self.manager.settings, key)
+            any_locked |= not unlocked
+            rb.setEnabled(unlocked)
+            preview.setEnabled(unlocked)
+            if unlocked:
+                rb.setText(names[key])
+                preview.setStyleSheet("")
+                preview.setPixmap(QIcon(ICONS[key]).pixmap(28, 28))
+            else:
+                rb.setText(f"{names[key]}  🔒")
+                preview.setText(locked_hint[key])
+                preview.setStyleSheet("font-size: 10px;")
+        self._special_unlock_btn.setVisible(any_locked)
 
     def _unlock_special_icon(self):
         from PySide6.QtWidgets import QInputDialog, QLineEdit
         from ui.app_icon import unlock
         code, ok = QInputDialog.getText(
-            self, "Unlock the special icon",
-            "Type your special code (you get it when you press Download\n"
-            "on st-softwaretool.pages.dev):", QLineEdit.Normal, "")
+            self, "Unlock a special icon",
+            "Type your special code (for example the one you get when you\n"
+            "press Download on st-softwaretool.pages.dev):", QLineEdit.Normal, "")
         if not ok or not code.strip():
             return
-        if not unlock(self.manager.settings, code):
-            QMessageBox.warning(self, "Unlock the special icon",
+        which = unlock(self.manager.settings, code)
+        if not which:
+            QMessageBox.warning(self, "Unlock a special icon",
                                 "That code isn't right. Check it and try again.")
             return
-        self._special_preview.setEnabled(True)
-        self._special_preview.setStyleSheet("")
         self._refresh_special_icon_row()
-        self.rb_icon_special.setChecked(True)
-        self.manager.settings["app_icon"] = "special"
+        self._special_rows[which][0].setChecked(True)
+        self.manager.settings["app_icon"] = which
         self._save_settings_quietly()
         self.settings_changed.emit()          # shows the special icon right away
-        QMessageBox.information(self, "Special icon unlocked",
-                                "🎉  Gift claimed! The special icon is now your app icon.\n"
+        name = "Special 2" if which == "special2" else "Special"
+        QMessageBox.information(self, f"{name} icon unlocked",
+                                f"🎉  Gift claimed! The {name} icon is now your app icon.\n"
                                 "You can switch icons any time in Settings › App Icon.")
 
     # ── Settings › Widgets & Menu Bar ─────────────────────────────────────────
@@ -1920,7 +1932,8 @@ class GUIView(QWidget):
             self.manager.settings["app_icon"] = (
                 "light" if self.rb_icon_light.isChecked() else
                 "dark" if self.rb_icon_dark.isChecked() else
-                "special" if self.rb_icon_special.isChecked() else "auto")
+                "special" if self.rb_icon_special.isChecked() else
+                "special2" if self.rb_icon_special2.isChecked() else "auto")
 
         # Protection & Privacy settings
         self.manager.settings['run_in_background']  = self.chk_run_background.isChecked()

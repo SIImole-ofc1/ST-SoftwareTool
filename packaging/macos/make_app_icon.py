@@ -6,8 +6,10 @@
 writes
     packaging/macos/app-icon-1024.png       light icon — the build turns it into ST.icns
     packaging/macos/app-icon-dark-1024.png  dark icon
-    packaging/macos/app-icon-special-1024.png  special icon (unlocked with a code)
-    assets/app-icon-light.png, assets/app-icon-dark.png, assets/app-icon-special.png
+    packaging/macos/app-icon-special-1024.png   special icon (unlocked with a code)
+    packaging/macos/app-icon-special2-1024.png  second special icon (another code)
+    assets/app-icon-light.png, assets/app-icon-dark.png, assets/app-icon-special.png,
+    assets/app-icon-special2.png
                                             512 px copies the app shows in the Dock / Finder
                                             (Settings › App Icon, ui/app_icon.py)
 
@@ -37,6 +39,8 @@ VARIANTS = {
     # a full picture (no ST layout): used whole
     "special": (os.path.join(HERE, "STsoftwaretoolLOGOspecial.png"), (255, 255, 255, 46),
                 "app-icon-special-1024.png", "app-icon-special.png", False),
+    "special2": (os.path.join(HERE, "STsoftwaretoolLOGOspecial2.png"), (255, 255, 255, 46),
+                 "app-icon-special2-1024.png", "app-icon-special2.png", False),
 }
 
 
